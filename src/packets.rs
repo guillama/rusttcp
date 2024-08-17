@@ -7,7 +7,7 @@ pub mod packets {
     use std::net::Ipv4Addr;
 
     pub fn on_request(
-        request: &mut Vec<u8>,
+        request: &mut [u8],
         response: &mut Vec<u8>,
         server_ipaddr: &Ipv4Addr,
     ) -> Result<(), RustTcpError> {
@@ -69,27 +69,8 @@ mod tests {
     #[test]
     fn send_syn_ack_response_after_receiving_syn_request() {
         let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
-        let ttl = 2;
-
-        // Build request
-        let mut request: Vec<u8> = Vec::new();
-        PacketBuilder::ipv4([192, 168, 1, 1], [192, 168, 1, 2], ttl)
-            .tcp(35000, 22, 1000, 10)
-            .syn()
-            .write(&mut request, &[])
-            .unwrap();
-
-        // Build expected response
-        let mut expected_iphdr = Ipv4Header::new(
-            TcpHeader::MIN_LEN as u16,
-            ttl,
-            IpNumber::TCP,
-            [192, 168, 1, 2], //source
-            [192, 168, 1, 1], //destination
-        )
-        .unwrap();
-        let crc = expected_iphdr.calc_header_checksum();
-        expected_iphdr.header_checksum = crc;
+        let mut request = build_syn_request();
+        let expected_iphdr = build_ipv4_header();
 
         // Send request
         let mut response: Vec<u8> = Vec::new();
@@ -105,6 +86,41 @@ mod tests {
         assert_eq!(resp_tcphdr.destination_port, 22);
         assert_eq!(resp_tcphdr.ack, true);
         assert_eq!(resp_tcphdr.acknowledgment_number, 1001);
+    }
+
+    fn build_syn_request() -> Vec<u8> {
+        let mut request: Vec<u8> = Vec::new();
+
+        PacketBuilder::ipv4(
+            [192, 168, 1, 1], // source
+            [192, 168, 1, 2], // destination
+            2,                // ttl
+        )
+        .tcp(
+            35000, // source
+            22,    //destination
+            1000,  //seq
+            10,    // windows size)
+        )
+        .syn()
+        .write(&mut request, &[])
+        .unwrap();
+
+        request
+    }
+
+    fn build_ipv4_header() -> Ipv4Header {
+        let mut iphdr = Ipv4Header::new(
+            TcpHeader::MIN_LEN as u16,
+            2, // ttl
+            IpNumber::TCP,
+            [192, 168, 1, 2], //source
+            [192, 168, 1, 1], //destination
+        )
+        .unwrap();
+
+        iphdr.header_checksum = iphdr.calc_header_checksum();
+        iphdr
     }
 
     #[test]
