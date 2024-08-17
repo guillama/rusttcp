@@ -1,38 +1,50 @@
+mod errors;
+mod packets;
+
 extern crate tun;
 
-use std::env;
-use std::io::{self, Read};
+use crate::errors::errors::RustTcpError;
+use crate::packets::packets::on_request;
 
-fn main() -> io::Result<()> {
+use std::env;
+use std::io::{Read, Write};
+use std::net::Ipv4Addr;
+use std::thread;
+use std::time::Duration;
+
+fn main() -> Result<(), RustTcpError> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
         panic!("[Usage]: {} [ipaddress]", args[0]);
     }
 
-    let ipaddr: &String = &args[1];
+    let server_ipaddr: Ipv4Addr = args[1].parse().expect("Bad IPv4 address;");
     let mut config = tun::Configuration::default();
-    config.address(ipaddr).netmask(24).up();
+    config.address(server_ipaddr).netmask(24).up();
 
-    let mut iface = tun::create(&config).unwrap();
-    println!("Waiting packets on address : {ipaddr}");
+    let mut iface = tun::create(&config).expect("Failed to create device.");
+
+    println!("Waiting packets on address : {server_ipaddr}");
+    let mut request: Vec<u8> = vec![0u8; 1504];
 
     loop {
-        read_packets(&mut iface)?;
+        let mut response: Vec<u8> = Vec::new();
+
+        match iface.read(&mut request) {
+            Ok(bytes_read) => request.truncate(bytes_read),
+            Err(e) => {
+                eprintln!("Failed to read request : {e}");
+                thread::sleep(Duration::from_secs(1)); // avoid being flooded by errors
+                continue;
+            }
+        };
+
+        let _ = on_request(&mut request, &mut response, &server_ipaddr);
+
+        match iface.write(&response) {
+            Ok(_) => (),
+            Err(e) => eprintln!("Failed to send answer : {e}"),
+        };
     }
-}
-
-fn read_packets<T: Read>(iface: &mut T) -> io::Result<()> {
-    let mut buf = [0; 1504];
-    let bytes_read = iface.read(&mut buf)?;
-
-    let flags = u16::from_be_bytes([buf[0], buf[1]]);
-    let proto = u16::from_be_bytes([buf[2], buf[3]]);
-    println!("flags: {flags} proto: {proto}");
-
-    // Skip the first 4 bytes (irrelevant data)
-    // Note: MacOS includes an unknown TUN header..
-    println!("Read {} bytes : {:x?}", bytes_read, &buf[4..bytes_read]);
-
-    Ok(())
 }
