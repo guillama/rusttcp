@@ -9,6 +9,7 @@ pub mod errors {
         BadProto(u8),
         BadIpv4Header,
         BadTcpHeader,
+        BadState,
     }
 
     impl fmt::Display for RustTcpError {
@@ -25,6 +26,9 @@ pub mod errors {
                 RustTcpError::BadTcpHeader => {
                     write!(f, "Error: Bad Tcp Header")
                 }
+                RustTcpError::BadState => {
+                    write!(f, "Error: Bad Tcp State")
+                }
             }
         }
     }
@@ -37,6 +41,7 @@ pub mod errors {
                 RustTcpError::BadAddress(_) => None,
                 RustTcpError::BadIpv4Header => None,
                 RustTcpError::BadTcpHeader => None,
+                RustTcpError::BadState => None,
             }
         }
     }

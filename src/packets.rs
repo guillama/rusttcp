@@ -2,79 +2,137 @@ extern crate etherparse;
 
 pub mod packets {
     use crate::RustTcpError;
-    use etherparse::{IpNumber, Ipv4Header};
-    use etherparse::{PacketBuilder, TcpHeader};
-    use std::net::Ipv4Addr;
+    use etherparse::{Ipv4Header, PacketBuilder, TcpHeader};
 
-    pub fn on_request(
-        request: &mut [u8],
-        response: &mut Vec<u8>,
-        server_ipaddr: &Ipv4Addr,
-    ) -> Result<(), RustTcpError> {
-        let request_len = request.len();
-
-        if request_len < (Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN) {
-            return Err(RustTcpError::BadPacketSize(request_len));
-        }
-
-        let (req_iphr, req_tcphdr) = match Ipv4Header::from_slice(&request[..request_len]) {
-            Ok((iphdr, tcphdr)) => (iphdr, tcphdr),
-            Err(_) => return Err(RustTcpError::BadIpv4Header),
-        };
-
-        if let Err(e) = check_ipv4(&req_iphr, &server_ipaddr) {
-            return Err(e);
-        }
-
-        let (req_tcphr, payload) = match TcpHeader::from_slice(req_tcphdr) {
-            Ok((tcphdr, payload)) => (tcphdr, payload),
-            Err(_) => return Err(RustTcpError::BadTcpHeader),
-        };
-
-        PacketBuilder::ipv4(req_iphr.destination, req_iphr.source, req_iphr.time_to_live)
-            .tcp(
-                req_tcphr.source_port,
-                req_tcphr.destination_port,
-                3000,
-                req_tcphr.window_size,
-            )
-            .syn()
-            .ack(req_tcphr.sequence_number + 1)
-            .write(response, payload)
-            .expect("Builder failed");
-
-        Ok(())
+    enum TcpState {
+        Listen,
+        SynReceived,
+        Established,
     }
 
-    fn check_ipv4(hdr: &Ipv4Header, server_ip: &Ipv4Addr) -> Result<(), RustTcpError> {
-        if hdr.destination != server_ip.octets() {
-            return Err(RustTcpError::BadAddress(hdr.destination));
+    pub struct TcpTlb {
+        state: TcpState,
+        iphdr: Ipv4Header,
+        payload: Vec<u8>,
+    }
+
+    impl TcpTlb {
+        pub fn new(iphdr: &Ipv4Header) -> Self {
+            TcpTlb {
+                state: TcpState::Listen,
+                iphdr: iphdr.clone(),
+                payload: Vec::new(),
+            }
         }
 
-        if hdr.protocol != IpNumber::TCP {
-            return Err(RustTcpError::BadProto(hdr.protocol.into()));
+        pub fn on_request(
+            &mut self,
+            tcphdr: &TcpHeader,
+            payload: &[u8],
+            response: &mut Vec<u8>,
+        ) -> Result<(), RustTcpError> {
+            match self.state {
+                TcpState::Listen => self.on_syn_request(&tcphdr, response)?,
+                TcpState::SynReceived => self.on_ack_request(&tcphdr)?,
+                TcpState::Established => self.on_data_request(&tcphdr, payload, response)?,
+            }
+
+            Ok(())
         }
 
-        Ok(())
+        fn on_syn_request(
+            &mut self,
+            tcphdr: &TcpHeader,
+            response: &mut Vec<u8>,
+        ) -> Result<(), RustTcpError> {
+            if !tcphdr.syn {
+                return Err(RustTcpError::BadState);
+            }
+
+            PacketBuilder::ipv4(
+                self.iphdr.destination,
+                self.iphdr.source,
+                self.iphdr.time_to_live,
+            )
+            .tcp(
+                tcphdr.source_port,
+                tcphdr.destination_port,
+                3000,
+                tcphdr.window_size,
+            )
+            .syn()
+            .ack(tcphdr.sequence_number + 1)
+            .write(response, &[])
+            .expect("Builder failed");
+
+            self.state = TcpState::SynReceived;
+
+            Ok(())
+        }
+
+        fn on_ack_request(&mut self, tcphdr: &TcpHeader) -> Result<(), RustTcpError> {
+            if !tcphdr.ack {
+                return Err(RustTcpError::BadState);
+            }
+
+            self.state = TcpState::Established;
+
+            Ok(())
+        }
+
+        fn on_data_request(
+            &mut self,
+            tcphdr: &TcpHeader,
+            payload: &[u8],
+            response: &mut Vec<u8>,
+        ) -> Result<(), RustTcpError> {
+            let ack_seqnum = tcphdr.sequence_number + payload.len() as u32;
+
+            PacketBuilder::ipv4(
+                self.iphdr.destination,
+                self.iphdr.source,
+                self.iphdr.time_to_live,
+            )
+            .tcp(
+                tcphdr.source_port,
+                tcphdr.destination_port,
+                3000,
+                tcphdr.window_size,
+            )
+            .syn()
+            .ack(ack_seqnum)
+            .write(response, &[])
+            .expect("Builder failed");
+
+            self.state = TcpState::SynReceived;
+            self.payload.extend(payload.iter());
+
+            Ok(())
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     extern crate etherparse;
-    use crate::packets::packets::on_request;
+
+    use super::packets::*;
+    use crate::connection::connection::{on_request, Connection};
     use etherparse::{IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
-    use std::net::Ipv4Addr;
+    use std::{collections::HashMap, net::Ipv4Addr};
 
     #[test]
     fn send_syn_ack_response_after_receiving_syn_request() {
+        const CLIENT_SEQNUM: u32 = 100;
+
         let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
-        let mut request = build_syn_request();
+        let request = build_syn_request(CLIENT_SEQNUM);
         let expected_iphdr = build_ipv4_header();
 
         // Send request
         let mut response: Vec<u8> = Vec::new();
-        on_request(&mut request, &mut response, &server_ip).unwrap();
+        let mut connections: HashMap<Connection, TcpTlb> = HashMap::new();
+        on_request(&request, &mut response, &mut connections, &server_ip).unwrap();
 
         // Check response
         let (resp_iphdr, resp_tcphdr) = Ipv4Header::from_slice(&response[..]).unwrap();
@@ -85,10 +143,10 @@ mod tests {
         assert_eq!(resp_tcphdr.syn, true);
         assert_eq!(resp_tcphdr.destination_port, 22);
         assert_eq!(resp_tcphdr.ack, true);
-        assert_eq!(resp_tcphdr.acknowledgment_number, 1001);
+        assert_eq!(resp_tcphdr.acknowledgment_number, CLIENT_SEQNUM + 1);
     }
 
-    fn build_syn_request() -> Vec<u8> {
+    fn build_syn_request(seqnum: u32) -> Vec<u8> {
         let mut request: Vec<u8> = Vec::new();
 
         PacketBuilder::ipv4(
@@ -97,10 +155,10 @@ mod tests {
             2,                // ttl
         )
         .tcp(
-            35000, // source
-            22,    //destination
-            1000,  //seq
-            10,    // windows size)
+            35000,  // source
+            22,     //destination
+            seqnum, //seq
+            10,     // windows size)
         )
         .syn()
         .write(&mut request, &[])
@@ -124,5 +182,66 @@ mod tests {
     }
 
     #[test]
-    fn test() {}
+    fn send_ack_after_a_3way_handshake_then_receiving_data() {
+        const CLIENT_SEQNUM: u32 = 100;
+
+        let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+
+        // Send request
+        let syn_packet = build_syn_request(CLIENT_SEQNUM);
+        let mut response_syn: Vec<u8> = Vec::new();
+        let mut connections: HashMap<Connection, TcpTlb> = HashMap::new();
+        on_request(&syn_packet, &mut response_syn, &mut connections, &server_ip).unwrap();
+
+        // Check response
+        let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_syn[..]).unwrap();
+        let (resp_tcphdr, _) = TcpHeader::from_slice(resp_tcphdr).unwrap();
+
+        let ack_packet = build_ack_request(&[], CLIENT_SEQNUM + 1, resp_tcphdr.sequence_number + 1);
+        let mut response_ack: Vec<u8> = Vec::new();
+        on_request(&ack_packet, &mut response_ack, &mut connections, &server_ip).unwrap();
+
+        let payload = [1, 2, 3];
+        let server_seqnum = resp_tcphdr.sequence_number;
+        let ack_packet_with_data =
+            build_ack_request(&payload, CLIENT_SEQNUM + 1, server_seqnum + 1);
+        let mut response_ack_data: Vec<u8> = Vec::new();
+        on_request(
+            &ack_packet_with_data,
+            &mut response_ack_data,
+            &mut connections,
+            &server_ip,
+        )
+        .unwrap();
+
+        let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_ack_data[..]).unwrap();
+        let (resp_tcphdr, resp_payload) = TcpHeader::from_slice(resp_tcphdr).unwrap();
+
+        // Check responses
+        assert_eq!(response_ack, Vec::new());
+        assert_eq!(resp_tcphdr.acknowledgment_number, 104);
+        assert_eq!(resp_tcphdr.sequence_number, server_seqnum);
+        assert_eq!(resp_payload, []);
+    }
+
+    fn build_ack_request(payload: &[u8], seq: u32, ack_seq: u32) -> Vec<u8> {
+        let mut request: Vec<u8> = Vec::new();
+
+        PacketBuilder::ipv4(
+            [192, 168, 1, 1], // source
+            [192, 168, 1, 2], // destination
+            2,                // ttl
+        )
+        .tcp(
+            35000, // source
+            22,    //destination
+            seq,   //seq
+            10,    // windows size)
+        )
+        .ack(ack_seq)
+        .write(&mut request, payload)
+        .unwrap();
+
+        request
+    }
 }
