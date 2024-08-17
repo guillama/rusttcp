@@ -4,7 +4,6 @@ pub mod errors {
 
     #[derive(Debug)]
     pub enum RustTcpError {
-        BadPacket,
         BadPacketSize(usize),
         BadAddress([u8; 4]),
         BadProto(u8),
@@ -15,7 +14,6 @@ pub mod errors {
     impl fmt::Display for RustTcpError {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match *self {
-                RustTcpError::BadPacket => write!(f, "Error: Bad Packet"),
                 RustTcpError::BadPacketSize(size) => write!(f, "Bad Packet size : {}", size),
                 RustTcpError::BadProto(proto) => write!(f, "Error: Bad Ipv4 Protocol : {}", proto),
                 RustTcpError::BadAddress(addr) => {
@@ -34,7 +32,6 @@ pub mod errors {
     impl error::Error for RustTcpError {
         fn source(&self) -> Option<&(dyn error::Error + 'static)> {
             match *self {
-                RustTcpError::BadPacket => None,
                 RustTcpError::BadPacketSize(_) => None,
                 RustTcpError::BadProto(_) => None,
                 RustTcpError::BadAddress(_) => None,
