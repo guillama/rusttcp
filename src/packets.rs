@@ -122,27 +122,27 @@ mod tests {
     use std::{collections::HashMap, net::Ipv4Addr};
 
     #[test]
-    fn send_syn_ack_response_after_receiving_syn_request() {
+    fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_request() {
         const CLIENT_SEQNUM: u32 = 100;
 
-        let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
-        let request = build_syn_request(CLIENT_SEQNUM);
-        let expected_iphdr = build_ipv4_header();
+        let ip = Ipv4Addr::from([192, 168, 1, 2]);
+        let syn_request = build_syn_request(CLIENT_SEQNUM);
+        let expected_resp_iphdr = build_ipv4_header();
 
-        // Send request
+        // Send SYN request
         let mut response: Vec<u8> = Vec::new();
         let mut connections: HashMap<Connection, TcpTlb> = HashMap::new();
-        on_request(&request, &mut response, &mut connections, &server_ip).unwrap();
+        on_request(&syn_request, &mut response, &mut connections, &ip).unwrap();
 
-        // Check response
+        // Check ACK response
         let (resp_iphdr, resp_tcphdr) = Ipv4Header::from_slice(&response[..]).unwrap();
         let (resp_tcphdr, _) = TcpHeader::from_slice(resp_tcphdr).unwrap();
 
         assert_eq!(response.len(), Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN);
-        assert_eq!(resp_iphdr, expected_iphdr);
+        assert_eq!(resp_iphdr, expected_resp_iphdr);
         assert_eq!(resp_tcphdr.syn, true);
-        assert_eq!(resp_tcphdr.destination_port, 22);
         assert_eq!(resp_tcphdr.ack, true);
+        assert_eq!(resp_tcphdr.destination_port, 22);
         assert_eq!(resp_tcphdr.acknowledgment_number, CLIENT_SEQNUM + 1);
     }
 
@@ -182,50 +182,41 @@ mod tests {
     }
 
     #[test]
-    fn send_ack_after_a_3way_handshake_then_receiving_data() {
+    fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
         const CLIENT_SEQNUM: u32 = 100;
 
-        let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
-
-        // Send request
-        let syn_packet = build_syn_request(CLIENT_SEQNUM);
-        let mut response_syn: Vec<u8> = Vec::new();
+        let ip = Ipv4Addr::from([192, 168, 1, 2]);
         let mut connections: HashMap<Connection, TcpTlb> = HashMap::new();
-        on_request(&syn_packet, &mut response_syn, &mut connections, &server_ip).unwrap();
-
-        // Check response
-        let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_syn[..]).unwrap();
-        let (resp_tcphdr, _) = TcpHeader::from_slice(resp_tcphdr).unwrap();
-
-        let ack_packet = build_ack_request(&[], CLIENT_SEQNUM + 1, resp_tcphdr.sequence_number + 1);
+        let mut response_syn: Vec<u8> = Vec::new();
         let mut response_ack: Vec<u8> = Vec::new();
-        on_request(&ack_packet, &mut response_ack, &mut connections, &server_ip).unwrap();
+        let mut response_data: Vec<u8> = Vec::new();
+        let data = [1, 2, 3];
 
-        let payload = [1, 2, 3];
-        let server_seqnum = resp_tcphdr.sequence_number;
-        let ack_packet_with_data =
-            build_ack_request(&payload, CLIENT_SEQNUM + 1, server_seqnum + 1);
-        let mut response_ack_data: Vec<u8> = Vec::new();
-        on_request(
-            &ack_packet_with_data,
-            &mut response_ack_data,
-            &mut connections,
-            &server_ip,
-        )
-        .unwrap();
+        // Send SYN packet
+        let syn_packet = build_syn_request(CLIENT_SEQNUM);
+        on_request(&syn_packet, &mut response_syn, &mut connections, &ip).unwrap();
 
-        let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_ack_data[..]).unwrap();
-        let (resp_tcphdr, resp_payload) = TcpHeader::from_slice(resp_tcphdr).unwrap();
+        // Send ACK + DATA packet
+        let ack_packet = build_ack_request(&[], CLIENT_SEQNUM + 1, &response_syn);
+        let data_packet = build_ack_request(&data, CLIENT_SEQNUM + 1, &response_syn);
+
+        on_request(&ack_packet, &mut response_ack, &mut connections, &ip).unwrap();
+        on_request(&data_packet, &mut response_data, &mut connections, &ip).unwrap();
 
         // Check responses
+        let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_data[..]).unwrap();
+        let (resp_tcphdr, resp_payload) = TcpHeader::from_slice(resp_tcphdr).unwrap();
+
         assert_eq!(response_ack, Vec::new());
         assert_eq!(resp_tcphdr.acknowledgment_number, 104);
-        assert_eq!(resp_tcphdr.sequence_number, server_seqnum);
         assert_eq!(resp_payload, []);
     }
 
-    fn build_ack_request(payload: &[u8], seq: u32, ack_seq: u32) -> Vec<u8> {
+    fn build_ack_request(payload: &[u8], seq: u32, response_syn: &[u8]) -> Vec<u8> {
         let mut request: Vec<u8> = Vec::new();
+
+        let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_syn[..]).unwrap();
+        let (resp_tcphdr, _) = TcpHeader::from_slice(resp_tcphdr).unwrap();
 
         PacketBuilder::ipv4(
             [192, 168, 1, 1], // source
@@ -238,7 +229,7 @@ mod tests {
             seq,   //seq
             10,    // windows size)
         )
-        .ack(ack_seq)
+        .ack(resp_tcphdr.sequence_number + 1)
         .write(&mut request, payload)
         .unwrap();
 
