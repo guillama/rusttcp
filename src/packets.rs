@@ -99,12 +99,10 @@ pub mod packets {
                 3000,
                 tcphdr.window_size,
             )
-            .syn()
             .ack(ack_seqnum)
             .write(response, &[])
             .expect("Builder failed");
 
-            self.state = TcpState::SynReceived;
             self.payload.extend(payload.iter());
 
             Ok(())
@@ -208,8 +206,10 @@ mod tests {
         let (resp_tcphdr, resp_payload) = TcpHeader::from_slice(resp_tcphdr).unwrap();
 
         assert_eq!(response_ack, Vec::new());
-        assert_eq!(resp_tcphdr.acknowledgment_number, 104);
         assert_eq!(resp_payload, []);
+        assert_eq!(resp_tcphdr.acknowledgment_number, 104);
+        assert_eq!(resp_tcphdr.ack, true);
+        assert_eq!(resp_tcphdr.syn, false);
     }
 
     fn build_ack_request(payload: &[u8], seq: u32, response_syn: &[u8]) -> Vec<u8> {
