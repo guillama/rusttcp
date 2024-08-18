@@ -1,118 +1,116 @@
 extern crate etherparse;
 
-pub mod packets {
-    use crate::RustTcpError;
-    use etherparse::{Ipv4Header, PacketBuilder, TcpHeader};
+use crate::RustTcpError;
+use etherparse::{Ipv4Header, PacketBuilder, TcpHeader};
 
-    enum TcpState {
-        Listen,
-        SynReceived,
-        Established,
-        LastAck,
+enum TcpState {
+    Listen,
+    SynReceived,
+    Established,
+    LastAck,
+}
+
+pub struct TcpTlb {
+    state: TcpState,
+    iphdr: Ipv4Header,
+    payload: Vec<u8>,
+}
+
+impl TcpTlb {
+    pub fn new(iphdr: &Ipv4Header) -> Self {
+        TcpTlb {
+            state: TcpState::Listen,
+            iphdr: iphdr.clone(),
+            payload: Vec::new(),
+        }
     }
 
-    pub struct TcpTlb {
-        state: TcpState,
-        iphdr: Ipv4Header,
-        payload: Vec<u8>,
+    pub fn on_request(
+        &mut self,
+        tcphdr: &TcpHeader,
+        payload: &[u8],
+        response: &mut Vec<u8>,
+    ) -> Result<(), RustTcpError> {
+        match self.state {
+            TcpState::Listen => self.on_syn_request(tcphdr, response)?,
+            TcpState::SynReceived => self.on_ack_request(tcphdr)?,
+            TcpState::Established => self.on_data_request(tcphdr, payload, response)?,
+            TcpState::LastAck => (),
+        }
+
+        Ok(())
     }
 
-    impl TcpTlb {
-        pub fn new(iphdr: &Ipv4Header) -> Self {
-            TcpTlb {
-                state: TcpState::Listen,
-                iphdr: iphdr.clone(),
-                payload: Vec::new(),
-            }
+    fn on_syn_request(
+        &mut self,
+        tcphdr: &TcpHeader,
+        response: &mut Vec<u8>,
+    ) -> Result<(), RustTcpError> {
+        if !tcphdr.syn {
+            return Err(RustTcpError::BadState);
         }
 
-        pub fn on_request(
-            &mut self,
-            tcphdr: &TcpHeader,
-            payload: &[u8],
-            response: &mut Vec<u8>,
-        ) -> Result<(), RustTcpError> {
-            match self.state {
-                TcpState::Listen => self.on_syn_request(&tcphdr, response)?,
-                TcpState::SynReceived => self.on_ack_request(&tcphdr)?,
-                TcpState::Established => self.on_data_request(&tcphdr, payload, response)?,
-                TcpState::LastAck => (),
-            }
+        PacketBuilder::ipv4(
+            self.iphdr.destination,
+            self.iphdr.source,
+            self.iphdr.time_to_live,
+        )
+        .tcp(
+            tcphdr.source_port,
+            tcphdr.destination_port,
+            3000,
+            tcphdr.window_size,
+        )
+        .syn()
+        .ack(tcphdr.sequence_number + 1)
+        .write(response, &[])
+        .expect("Builder failed");
 
-            Ok(())
+        self.state = TcpState::SynReceived;
+
+        Ok(())
+    }
+
+    fn on_ack_request(&mut self, tcphdr: &TcpHeader) -> Result<(), RustTcpError> {
+        if !tcphdr.ack {
+            return Err(RustTcpError::BadState);
         }
 
-        fn on_syn_request(
-            &mut self,
-            tcphdr: &TcpHeader,
-            response: &mut Vec<u8>,
-        ) -> Result<(), RustTcpError> {
-            if !tcphdr.syn {
-                return Err(RustTcpError::BadState);
-            }
+        self.state = TcpState::Established;
 
-            PacketBuilder::ipv4(
-                self.iphdr.destination,
-                self.iphdr.source,
-                self.iphdr.time_to_live,
-            )
-            .tcp(
-                tcphdr.source_port,
-                tcphdr.destination_port,
-                3000,
-                tcphdr.window_size,
-            )
-            .syn()
-            .ack(tcphdr.sequence_number + 1)
-            .write(response, &[])
-            .expect("Builder failed");
+        Ok(())
+    }
 
-            self.state = TcpState::SynReceived;
+    fn on_data_request(
+        &mut self,
+        tcphdr: &TcpHeader,
+        payload: &[u8],
+        response: &mut Vec<u8>,
+    ) -> Result<(), RustTcpError> {
+        let ack_seqnum = tcphdr.sequence_number + payload.len() as u32;
 
-            Ok(())
+        PacketBuilder::ipv4(
+            self.iphdr.destination,
+            self.iphdr.source,
+            self.iphdr.time_to_live,
+        )
+        .tcp(
+            tcphdr.source_port,
+            tcphdr.destination_port,
+            3000,
+            tcphdr.window_size,
+        )
+        .ack(ack_seqnum)
+        .write(response, &[])
+        .expect("Builder failed");
+
+        self.payload.extend(payload.iter());
+
+        if tcphdr.fin {
+            self.state = TcpState::LastAck;
         }
 
-        fn on_ack_request(&mut self, tcphdr: &TcpHeader) -> Result<(), RustTcpError> {
-            if !tcphdr.ack {
-                return Err(RustTcpError::BadState);
-            }
-
-            self.state = TcpState::Established;
-
-            Ok(())
-        }
-
-        fn on_data_request(
-            &mut self,
-            tcphdr: &TcpHeader,
-            payload: &[u8],
-            response: &mut Vec<u8>,
-        ) -> Result<(), RustTcpError> {
-            let ack_seqnum = tcphdr.sequence_number + payload.len() as u32;
-
-            PacketBuilder::ipv4(
-                self.iphdr.destination,
-                self.iphdr.source,
-                self.iphdr.time_to_live,
-            )
-            .tcp(
-                tcphdr.source_port,
-                tcphdr.destination_port,
-                3000,
-                tcphdr.window_size,
-            )
-            .ack(ack_seqnum)
-            .write(response, &[])
-            .expect("Builder failed");
-
-            self.payload.extend(payload.iter());
-
-            if tcphdr.fin {
-                self.state = TcpState::LastAck;
-            }
-
-            Ok(())
-        }
+        Ok(())
     }
 }
 
@@ -120,8 +118,8 @@ pub mod packets {
 mod tests {
     extern crate etherparse;
 
-    use super::packets::*;
-    use crate::connection::connection::{on_request, Connection};
+    use super::*;
+    use crate::connection::{on_request, Connection};
     use etherparse::{IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
     use std::{collections::HashMap, net::Ipv4Addr};
 

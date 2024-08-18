@@ -4,10 +4,9 @@ mod packets;
 
 extern crate tun;
 
-use crate::connection::connection::on_request;
-use crate::connection::connection::Connection;
-use crate::errors::errors::RustTcpError;
-use crate::packets::packets::TcpTlb;
+use crate::connection::{on_request, Connection};
+use crate::errors::RustTcpError;
+use crate::packets::TcpTlb;
 
 use std::collections::HashMap;
 use std::env;
@@ -50,9 +49,9 @@ fn main() -> Result<(), RustTcpError> {
         let mut response: Vec<u8> = Vec::new();
         response.extend(request.iter().take(TUN_HEADER_SIZE));
 
-        let mut ipv4_request = &request[TUN_HEADER_SIZE..];
+        let ipv4_request = &request[TUN_HEADER_SIZE..];
         if let Err(e) = on_request(
-            &mut ipv4_request,
+            ipv4_request,
             &mut response,
             &mut connections,
             &server_ipaddr,
@@ -60,7 +59,7 @@ fn main() -> Result<(), RustTcpError> {
             eprintln!("Failed to send answer : {e}");
         }
 
-        match iface.write(&response) {
+        match iface.write_all(&response) {
             Ok(_) => (),
             Err(e) => eprintln!("Failed to send answer : {e}"),
         };
