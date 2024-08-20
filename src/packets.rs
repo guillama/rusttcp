@@ -1,7 +1,7 @@
 extern crate etherparse;
 
-use crate::RustTcpError;
-use etherparse::{Ipv4Header, PacketBuilder, TcpHeader};
+use crate::{connection::Connection, RustTcpError};
+use etherparse::{PacketBuilder, TcpHeader};
 
 enum TcpState {
     Listen,
@@ -10,18 +10,44 @@ enum TcpState {
     LastAck,
 }
 
+#[allow(dead_code)]
+struct TcpRecvContext {
+    isa: u32,
+    next: u32,
+    window: u16,
+}
+
+#[allow(dead_code)]
+struct TcpSendContext {
+    isa: u32,
+    next: u32,
+    window: u16,
+}
+
 pub struct TcpTlb {
     state: TcpState,
-    iphdr: Ipv4Header,
-    payload: Vec<u8>,
+    connection: Connection,
+    recv_buf: Vec<u8>,
+    recv: TcpRecvContext,
+    send: TcpSendContext,
 }
 
 impl TcpTlb {
-    pub fn new(iphdr: &Ipv4Header) -> Self {
+    pub fn new(connection: &Connection) -> Self {
         TcpTlb {
             state: TcpState::Listen,
-            iphdr: iphdr.clone(),
-            payload: Vec::new(),
+            connection: connection.clone(),
+            recv_buf: Vec::new(),
+            recv: TcpRecvContext {
+                isa: 0,
+                next: 0,
+                window: 10,
+            },
+            send: TcpSendContext {
+                isa: 0,
+                next: 301,
+                window: 10,
+            },
         }
     }
 
@@ -32,79 +58,79 @@ impl TcpTlb {
         response: &mut Vec<u8>,
     ) -> Result<(), RustTcpError> {
         match self.state {
-            TcpState::Listen => self.on_syn_request(tcphdr, response)?,
-            TcpState::SynReceived => self.on_ack_request(tcphdr)?,
-            TcpState::Established => self.on_data_request(tcphdr, payload, response)?,
-            TcpState::LastAck => (),
+            TcpState::Listen => {
+                if !tcphdr.syn {
+                    return Err(RustTcpError::BadState);
+                }
+
+                self.recv.isa = tcphdr.sequence_number;
+                self.recv.next = self.recv.isa + 1;
+                self.on_syn_request(response)?;
+                self.state = TcpState::SynReceived;
+            }
+            TcpState::SynReceived => {
+                if !tcphdr.ack {
+                    return Err(RustTcpError::BadState);
+                }
+
+                self.state = TcpState::Established;
+            }
+            TcpState::Established => {
+                self.recv.next = tcphdr.sequence_number;
+                self.on_data_request(payload, response)?;
+
+                if tcphdr.fin {
+                    self.state = TcpState::CloseWait;
+                }
+            }
+            TcpState::CloseWait => (),
+            TcpState::LastAck => unimplemented!(),
         }
 
         Ok(())
     }
 
-    fn on_syn_request(
-        &mut self,
-        tcphdr: &TcpHeader,
-        response: &mut Vec<u8>,
-    ) -> Result<(), RustTcpError> {
-        if !tcphdr.syn {
-            return Err(RustTcpError::BadState);
+    fn on_syn_request(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+            .tcp(
+                self.connection.port_src,
+                self.connection.port_dest,
+                self.send.isa,
+                self.send.window,
+            )
+            .syn()
+            .ack(self.recv.next)
+            .write(response, &[]);
+
+        if writer.is_err() {
+            return Err(RustTcpError::Internal);
         }
-
-        PacketBuilder::ipv4(
-            self.iphdr.destination,
-            self.iphdr.source,
-            self.iphdr.time_to_live,
-        )
-        .tcp(
-            tcphdr.source_port,
-            tcphdr.destination_port,
-            3000,
-            tcphdr.window_size,
-        )
-        .syn()
-        .ack(tcphdr.sequence_number + 1)
-        .write(response, &[])
-        .expect("Builder failed");
-
-        self.state = TcpState::SynReceived;
-
-        Ok(())
-    }
-
-    fn on_ack_request(&mut self, tcphdr: &TcpHeader) -> Result<(), RustTcpError> {
-        if !tcphdr.ack {
-            return Err(RustTcpError::BadState);
-        }
-
-        self.state = TcpState::Established;
 
         Ok(())
     }
 
     fn on_data_request(
         &mut self,
-        tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut Vec<u8>,
     ) -> Result<(), RustTcpError> {
-        let ack_seqnum = tcphdr.sequence_number + payload.len() as u32;
+        self.recv.next += payload.len() as u32;
 
-        PacketBuilder::ipv4(
-            self.iphdr.destination,
-            self.iphdr.source,
-            self.iphdr.time_to_live,
-        )
-        .tcp(
-            tcphdr.source_port,
-            tcphdr.destination_port,
-            3000,
-            tcphdr.window_size,
-        )
-        .ack(ack_seqnum)
-        .write(response, &[])
-        .expect("Builder failed");
+        PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+            .tcp(
+                self.connection.port_src,
+                self.connection.port_dest,
+                self.send.isa,
+                self.send.window,
+            )
+            .ack(self.recv.next)
+            .write(response, &[])
+            .expect("Builder failed");
 
-        self.payload.extend(payload.iter());
+        self.recv_buf.extend(payload.iter());
+
+        Ok(())
+    }
 
         if tcphdr.fin {
             self.state = TcpState::LastAck;
@@ -154,7 +180,7 @@ mod tests {
         PacketBuilder::ipv4(
             [192, 168, 1, 1], // source
             [192, 168, 1, 2], // destination
-            2,                // ttl
+            64,               // ttl
         )
         .tcp(
             35000,  // source
@@ -172,7 +198,7 @@ mod tests {
     fn build_ipv4_header() -> Ipv4Header {
         let mut iphdr = Ipv4Header::new(
             TcpHeader::MIN_LEN as u16,
-            2, // ttl
+            64, // ttl
             IpNumber::TCP,
             [192, 168, 1, 2], //source
             [192, 168, 1, 1], //destination
@@ -225,7 +251,7 @@ mod tests {
         PacketBuilder::ipv4(
             [192, 168, 1, 1], // source
             [192, 168, 1, 2], // destination
-            2,                // ttl
+            64,               // ttl
         )
         .tcp(
             35000, // source
@@ -294,7 +320,7 @@ mod tests {
         PacketBuilder::ipv4(
             [192, 168, 1, 1], // source
             [192, 168, 1, 2], // destination
-            2,                // ttl
+            64,               // ttl
         )
         .tcp(
             35000, // source

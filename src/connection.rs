@@ -4,12 +4,13 @@ use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Connection {
-    ip_src: [u8; 4],
-    ip_dest: [u8; 4],
-    port_src: u16,
-    port_dest: u16,
+    pub ip_src: [u8; 4],
+    pub ip_dest: [u8; 4],
+    pub port_src: u16,
+    pub port_dest: u16,
+}
 }
 
 pub fn on_request(
@@ -44,8 +45,8 @@ pub fn on_request(
     };
 
     connections
-        .entry(c)
-        .or_insert(TcpTlb::new(&iphdr))
+        .entry(c.clone())
+        .or_insert(TcpTlb::new(&c))
         .on_request(&tcphdr, payload, response)?;
 
     Ok(())

@@ -1,8 +1,8 @@
-use std::error;
 use std::fmt;
 
 #[derive(Debug)]
 pub enum RustTcpError {
+    Internal,
     BadPacketSize(usize),
     BadAddress([u8; 4]),
     BadProto(u8),
@@ -14,6 +14,7 @@ pub enum RustTcpError {
 impl fmt::Display for RustTcpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            RustTcpError::Internal => write!(f, "Internal error"),
             RustTcpError::BadPacketSize(size) => write!(f, "Bad Packet size : {}", size),
             RustTcpError::BadProto(proto) => write!(f, "Error: Bad Ipv4 Protocol : {}", proto),
             RustTcpError::BadAddress(addr) => {
@@ -28,19 +29,6 @@ impl fmt::Display for RustTcpError {
             RustTcpError::BadState => {
                 write!(f, "Error: Bad Tcp State")
             }
-        }
-    }
-}
-
-impl error::Error for RustTcpError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match *self {
-            RustTcpError::BadPacketSize(_) => None,
-            RustTcpError::BadProto(_) => None,
-            RustTcpError::BadAddress(_) => None,
-            RustTcpError::BadIpv4Header => None,
-            RustTcpError::BadTcpHeader => None,
-            RustTcpError::BadState => None,
         }
     }
 }

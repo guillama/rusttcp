@@ -18,7 +18,7 @@ use std::time::Duration;
 const TUN_HEADER_SIZE: usize = 4;
 const BUFF_MAX_SIZE: usize = 1504;
 
-fn main() -> Result<(), RustTcpError> {
+fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         panic!("[Usage]: {} [ipaddress]", args[0]);
@@ -29,8 +29,8 @@ fn main() -> Result<(), RustTcpError> {
     config.address(server_ipaddr).netmask(24).up();
 
     let mut iface = tun::create(&config).expect("Failed to create device.");
-
     let mut connections: HashMap<Connection, TcpTlb> = HashMap::new();
+
     println!("Waiting packets on address : {server_ipaddr}");
 
     loop {
