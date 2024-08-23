@@ -6,8 +6,6 @@ extern crate tun;
 
 use connection::RustTcp;
 
-use crate::errors::RustTcpError;
-
 use std::env;
 use std::io::{Read, Write};
 use std::net::Ipv4Addr;
