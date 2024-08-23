@@ -4,11 +4,10 @@ mod packets;
 
 extern crate tun;
 
-use crate::connection::{on_request, Connection};
-use crate::errors::RustTcpError;
-use crate::packets::TcpTlb;
+use connection::RustTcp;
 
-use std::collections::HashMap;
+use crate::errors::RustTcpError;
+
 use std::env;
 use std::io::{Read, Write};
 use std::net::Ipv4Addr;
@@ -29,7 +28,9 @@ fn main() {
     config.address(server_ipaddr).netmask(24).up();
 
     let mut iface = tun::create(&config).expect("Failed to create device.");
-    let mut connections: HashMap<Connection, TcpTlb> = HashMap::new();
+    let mut rust_tcp = RustTcp::new(&server_ipaddr);
+
+    rust_tcp.open(22, "conn1");
 
     println!("Waiting packets on address : {server_ipaddr}");
 
@@ -50,12 +51,7 @@ fn main() {
         response.extend(request.iter().take(TUN_HEADER_SIZE));
 
         let ipv4_request = &request[TUN_HEADER_SIZE..];
-        if let Err(e) = on_request(
-            ipv4_request,
-            &mut response,
-            &mut connections,
-            &server_ipaddr,
-        ) {
+        if let Err(e) = rust_tcp.on_request(ipv4_request, &mut response) {
             eprintln!("Failed to send answer : {e}");
         }
 
