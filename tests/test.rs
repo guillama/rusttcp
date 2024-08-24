@@ -2,7 +2,7 @@ extern crate etherparse;
 
 use etherparse::{IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
 use rusttcp::connection::*;
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, u32::MAX};
 
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_request() {
@@ -324,4 +324,30 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.acknowledgment_number, 101);
     assert_eq!(nbytes_read, 0);
+}
+
+#[test]
+fn send_data_with_max_u32_sequence_number_is_acknowledged() {
+    const CLIENT_SEQNUM: u32 = MAX - 1;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    rust_tcp.open(22, "conn2");
+
+    let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+
+    let mut recv_buf = [0; 1504];
+    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+
+    // Check responses
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+
+    assert_eq!(tcphdr.rst, false);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.acknowledgment_number, 4);
+    assert_eq!(nbytes_read, 5);
 }

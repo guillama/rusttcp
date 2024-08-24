@@ -84,15 +84,15 @@ impl TcpTlb {
             }
             TcpState::Established => {
                 let payload_len = payload.len() as u32;
-                let seqnum_min = tcphdr.sequence_number;
-                let seqnum_max = tcphdr.sequence_number + payload_len;
+                let seqnum_min: u64 = tcphdr.sequence_number as u64;
+                let seqnum_max: u64 = tcphdr.sequence_number as u64 + payload_len as u64;
 
                 if self.check_seqnum_range(seqnum_min, seqnum_max).is_ok() {
-                    self.recv.next += payload_len;
+                    self.recv.next = self.recv.next.wrapping_add(payload_len);
                     self.recv_buf.extend(payload.iter());
                 }
 
-                self.on_data_request(payload, response)?;
+                self.on_data_request(response)?;
 
                 if tcphdr.fin {
                     self.state = TcpState::CloseWait;
@@ -124,12 +124,8 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_data_request(
-        &mut self,
-        payload: &[u8],
-        response: &mut Vec<u8>,
-    ) -> Result<(), RustTcpError> {
-        PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+    fn on_data_request(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
             .tcp(
                 self.connection.port_src,
                 self.connection.port_dest,
@@ -137,19 +133,24 @@ impl TcpTlb {
                 self.send.window,
             )
             .ack(self.recv.next)
-            .write(response, &[])
-            .expect("Builder failed");
+            .write(response, &[]);
+
+        if writer.is_err() {
+            return Err(RustTcpError::Internal);
+        }
 
         Ok(())
     }
 
-    fn check_seqnum_range(&self, min: u32, max: u32) -> Result<(), RustTcpError> {
-        let upper_bound: u32 = self.recv.next + self.recv.window as u32 - 1;
-        if min < self.recv.next || min > upper_bound {
+    fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {
+        let upper_bound: u64 = self.recv.next as u64 + self.recv.window as u64 - 1;
+        let next: u64 = self.recv.next as u64;
+
+        if min < next || min > upper_bound {
             return Err(RustTcpError::UnexpectedSeqNum);
         }
 
-        if max < self.recv.next || max > upper_bound {
+        if max < next || max > upper_bound {
             return Err(RustTcpError::UnexpectedSeqNum);
         }
 
