@@ -10,6 +10,7 @@ pub enum RustTcpError {
     BadIpv4Header,
     BadTcpHeader,
     BadState,
+    UnexpectedSeqNum,
 }
 
 impl fmt::Display for RustTcpError {
@@ -30,6 +31,9 @@ impl fmt::Display for RustTcpError {
             }
             RustTcpError::BadState => {
                 write!(f, "Error: Bad Tcp State")
+            }
+            RustTcpError::UnexpectedSeqNum => {
+                write!(f, "Error: Unexpected Sequence Number")
             }
         }
     }

@@ -83,7 +83,11 @@ impl TcpTlb {
                 self.state = TcpState::Established;
             }
             TcpState::Established => {
-                self.recv.next = tcphdr.sequence_number;
+                if self.check_seqnum(tcphdr.sequence_number).is_ok() {
+                    self.recv.next += payload.len() as u32;
+                    self.recv_buf.extend(payload.iter());
+                }
+
                 self.on_data_request(payload, response)?;
 
                 if tcphdr.fin {
@@ -121,8 +125,6 @@ impl TcpTlb {
         payload: &[u8],
         response: &mut Vec<u8>,
     ) -> Result<(), RustTcpError> {
-        self.recv.next += payload.len() as u32;
-
         PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
             .tcp(
                 self.connection.port_src,
@@ -134,7 +136,14 @@ impl TcpTlb {
             .write(response, &[])
             .expect("Builder failed");
 
-        self.recv_buf.extend(payload.iter());
+        Ok(())
+    }
+
+    fn check_seqnum(&self, seqnum: u32) -> Result<(), RustTcpError> {
+        let upper_bound: u32 = self.recv.next + self.recv.window as u32 - 1;
+        if seqnum < self.recv.next || seqnum > upper_bound {
+            return Err(RustTcpError::UnexpectedSeqNum);
+        }
 
         Ok(())
     }
@@ -152,7 +161,7 @@ impl TcpTlb {
     }
 
     fn build_fin_packet(&self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
-        PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
             .tcp(
                 self.connection.port_src,
                 self.connection.port_dest,
@@ -161,9 +170,18 @@ impl TcpTlb {
             )
             .ack(self.recv.next)
             .fin()
-            .write(response, &[])
-            .expect("Builder failed");
+            .write(response, &[]);
+
+        if writer.is_err() {
+            return Err(RustTcpError::Internal);
+        }
 
         Ok(())
+    }
+
+    pub fn on_read(&self, buf: &mut [u8]) -> usize {
+        let n = self.recv_buf.len();
+        buf[0..n].clone_from_slice(&self.recv_buf);
+        n
     }
 }

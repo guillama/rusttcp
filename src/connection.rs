@@ -46,6 +46,17 @@ impl RustTcp {
         self.queue.push_front(usr_event);
     }
 
+    #[allow(dead_code)]
+    pub fn read(&self, name: &str, buf: &mut [u8]) -> Result<usize, RustTcpError> {
+        if let Some(c) = self.conns_by_name.get(name) {
+            if let Some(tlb) = self.conns.get(c) {
+                return Ok(tlb.on_read(buf));
+            }
+        }
+
+        Err(RustTcpError::ElementNotFound(name.to_string()))
+    }
+
     pub fn on_request(
         &mut self,
         request: &[u8],
@@ -108,18 +119,17 @@ impl RustTcp {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn on_user_event(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
         let event: Option<UserEvent> = self.queue.pop_front();
         match event {
-            Some(UserEvent::Close(name)) => self.do_close(name, response)?,
+            Some(UserEvent::Close(name)) => self.on_close(name, response)?,
             _ => return Ok(()),
         }
 
         Ok(())
     }
 
-    fn do_close(&mut self, name: String, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn on_close(&mut self, name: String, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
         if let Some(c) = self.conns_by_name.get_mut(&name) {
             if let Some(tlb) = self.conns.get_mut(c) {
                 return tlb.on_close(response);

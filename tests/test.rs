@@ -129,6 +129,7 @@ fn send_fin_packet_close_server_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
+
     rust_tcp.open(22, "conn1");
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
@@ -214,6 +215,7 @@ fn close_server_connection_after_receiving_fin_packet() {
 
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
+
     rust_tcp.open(22, "conn2");
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
@@ -235,4 +237,39 @@ fn close_server_connection_after_receiving_fin_packet() {
     assert_eq!(tcphdr.fin, true);
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.acknowledgment_number, 104);
+}
+
+#[test]
+fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
+    const CLIENT_SEQNUM: u32 = 100;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    rust_tcp.open(22, "conn2");
+
+    let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let data = &[1, 2, 3];
+    let response_data1 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+    let response_data2 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+
+    let mut recv_buf = [0; 1504];
+    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+
+    // Check responses
+    let (_, tcphdr_slice1) = Ipv4Header::from_slice(&response_data1).unwrap();
+    let (_, tcphdr_slice2) = Ipv4Header::from_slice(&response_data2).unwrap();
+    let (tcphdr1, _) = TcpHeader::from_slice(tcphdr_slice1).unwrap();
+    let (tcphdr2, _) = TcpHeader::from_slice(tcphdr_slice2).unwrap();
+
+    assert_eq!(tcphdr1.rst, false);
+    assert_eq!(tcphdr1.ack, true);
+    assert_eq!(tcphdr1.acknowledgment_number, 104);
+
+    assert_eq!(tcphdr2.rst, false);
+    assert_eq!(tcphdr2.ack, true);
+    assert_eq!(tcphdr2.acknowledgment_number, 104);
+
+    assert_eq!(nbytes_read, 3);
+    assert_eq!(&recv_buf[..3], &[1, 2, 3]);
 }
