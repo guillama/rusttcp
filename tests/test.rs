@@ -273,3 +273,55 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     assert_eq!(nbytes_read, 3);
     assert_eq!(&recv_buf[..3], &[1, 2, 3]);
 }
+
+#[test]
+fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknowledged() {
+    const CLIENT_SEQNUM: u32 = 100;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    rust_tcp.open(22, "conn2");
+
+    let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let data = &[1, 2, 3];
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 300, data, &resp_syn);
+
+    let mut recv_buf = [0; 1504];
+    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+
+    // Check responses
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+
+    assert_eq!(tcphdr.rst, false);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.acknowledgment_number, 101);
+    assert_eq!(nbytes_read, 0);
+}
+
+#[test]
+fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
+    const CLIENT_SEQNUM: u32 = 100;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    rust_tcp.open(22, "conn2");
+
+    let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+
+    let mut recv_buf = [0; 1504];
+    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+
+    // Check responses
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+
+    assert_eq!(tcphdr.rst, false);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.acknowledgment_number, 101);
+    assert_eq!(nbytes_read, 0);
+}

@@ -83,8 +83,12 @@ impl TcpTlb {
                 self.state = TcpState::Established;
             }
             TcpState::Established => {
-                if self.check_seqnum(tcphdr.sequence_number).is_ok() {
-                    self.recv.next += payload.len() as u32;
+                let payload_len = payload.len() as u32;
+                let seqnum_min = tcphdr.sequence_number;
+                let seqnum_max = tcphdr.sequence_number + payload_len;
+
+                if self.check_seqnum_range(seqnum_min, seqnum_max).is_ok() {
+                    self.recv.next += payload_len;
                     self.recv_buf.extend(payload.iter());
                 }
 
@@ -139,9 +143,13 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn check_seqnum(&self, seqnum: u32) -> Result<(), RustTcpError> {
+    fn check_seqnum_range(&self, min: u32, max: u32) -> Result<(), RustTcpError> {
         let upper_bound: u32 = self.recv.next + self.recv.window as u32 - 1;
-        if seqnum < self.recv.next || seqnum > upper_bound {
+        if min < self.recv.next || min > upper_bound {
+            return Err(RustTcpError::UnexpectedSeqNum);
+        }
+
+        if max < self.recv.next || max > upper_bound {
             return Err(RustTcpError::UnexpectedSeqNum);
         }
 
