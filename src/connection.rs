@@ -62,7 +62,7 @@ impl RustTcp {
             Err(_) => return Err(RustTcpError::BadIpv4Header),
         };
 
-        check_ipv4(&iphdr, &self.server_ip)?;
+        self.check_ipv4(&iphdr)?;
 
         let (tcphdr, payload) = match TcpHeader::from_slice(transport_hdr) {
             Ok((tcphdr, payload)) => (tcphdr, payload),
@@ -90,7 +90,19 @@ impl RustTcp {
 
             return Ok(());
         } else {
-            // Handle error
+            // Send Reset
+        }
+
+        Ok(())
+    }
+
+    fn check_ipv4(&self, hdr: &Ipv4Header) -> Result<(), RustTcpError> {
+        if hdr.destination != self.server_ip.octets() {
+            return Err(RustTcpError::BadAddress(hdr.destination));
+        }
+
+        if hdr.protocol != IpNumber::TCP {
+            return Err(RustTcpError::BadProto(hdr.protocol.into()));
         }
 
         Ok(())
@@ -116,16 +128,4 @@ impl RustTcp {
 
         Err(RustTcpError::ElementNotFound(name.to_string()))
     }
-}
-
-fn check_ipv4(hdr: &Ipv4Header, server_ip: &Ipv4Addr) -> Result<(), RustTcpError> {
-    if hdr.destination != server_ip.octets() {
-        return Err(RustTcpError::BadAddress(hdr.destination));
-    }
-
-    if hdr.protocol != IpNumber::TCP {
-        return Err(RustTcpError::BadProto(hdr.protocol.into()));
-    }
-
-    Ok(())
 }
