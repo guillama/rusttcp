@@ -290,7 +290,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
 
-    // Check responses
+    // Check response
     let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
     let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
 
@@ -316,7 +316,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
 
-    // Check responses
+    // Check response
     let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
     let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
 
@@ -342,7 +342,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
 
-    // Check responses
+    // Check response
     let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
     let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
 
@@ -350,4 +350,35 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.acknowledgment_number, 4);
     assert_eq!(nbytes_read, 5);
+}
+
+#[test]
+fn send_data_with_wrapped_sequence_number_is_acknowledged() {
+    const CLIENT_SEQNUM: u32 = MAX - 5;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    rust_tcp.open(22, "conn2");
+
+    let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+
+    let data1 = &[0x1, 0x2, 0x3, 0x4, 0x5];
+    let response_data1 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data1, &resp_syn);
+
+    let seqnum = CLIENT_SEQNUM.wrapping_add(data1.len() as u32 + 1);
+    let data2 = &[0x1, 0x2, 0x3];
+    let response_data2 = send_data_packet(&mut rust_tcp, seqnum, data2, &response_data1);
+
+    let mut recv_buf = [0; 1504];
+    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+
+    // Check response
+    let (_, tcphdr_slice2) = Ipv4Header::from_slice(&response_data2).unwrap();
+    let (tcphdr2, _) = TcpHeader::from_slice(tcphdr_slice2).unwrap();
+
+    assert_eq!(tcphdr2.rst, false);
+    assert_eq!(tcphdr2.ack, true);
+    assert_eq!(tcphdr2.acknowledgment_number, 3);
+    assert_eq!(nbytes_read, 8);
 }
