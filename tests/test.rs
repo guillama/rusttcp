@@ -82,8 +82,8 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     rust_tcp.on_request(&syn_packet, &mut response_syn).unwrap();
 
     // Send ACK + DATA packet
-    let ack_packet = build_ack_request(&[], CLIENT_SEQNUM + 1, &response_syn);
-    let data_packet = build_ack_request(&data, CLIENT_SEQNUM + 1, &response_syn);
+    let ack_packet = build_ack_request(&[], CLIENT_SEQNUM + 1, get_ack_seqnum(&response_syn));
+    let data_packet = build_ack_request(&data, CLIENT_SEQNUM + 1, get_ack_seqnum(&response_syn));
 
     rust_tcp.on_request(&ack_packet, &mut response_ack).unwrap();
     rust_tcp
@@ -101,10 +101,8 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     assert_eq!(resp_tcphdr.syn, false);
 }
 
-fn build_ack_request(payload: &[u8], seq: u32, response_syn: &[u8]) -> Vec<u8> {
+fn build_ack_request(payload: &[u8], seq: u32, seqnum: u32) -> Vec<u8> {
     let mut request: Vec<u8> = Vec::new();
-    let (_, resp_tcphdr) = Ipv4Header::from_slice(&response_syn[..]).unwrap();
-    let (resp_tcphdr, _) = TcpHeader::from_slice(resp_tcphdr).unwrap();
 
     PacketBuilder::ipv4(
         [192, 168, 1, 1], // source
@@ -117,11 +115,18 @@ fn build_ack_request(payload: &[u8], seq: u32, response_syn: &[u8]) -> Vec<u8> {
         seq,   //seq
         10,    // windows size)
     )
-    .ack(resp_tcphdr.sequence_number + 1)
+    .ack(seqnum)
     .write(&mut request, payload)
     .unwrap();
 
     request
+}
+
+fn get_ack_seqnum(response: &[u8]) -> u32 {
+    let (_, resp_tcphdr) = Ipv4Header::from_slice(response).unwrap();
+    let (resp_tcphdr, _) = TcpHeader::from_slice(resp_tcphdr).unwrap();
+
+    resp_tcphdr.sequence_number
 }
 
 #[test]
@@ -134,7 +139,8 @@ fn send_fin_packet_close_server_connection() {
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
-    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let seqnum = CLIENT_SEQNUM + 1 + (data.len() as u32);
     let response_fin = send_fin_packet(&mut rust_tcp, seqnum, &response_data);
@@ -154,7 +160,7 @@ fn do_handshake(rust_tcp: &mut RustTcp, seqnum: u32) -> Vec<u8> {
     let syn_packet = build_syn_request(seqnum);
     rust_tcp.on_request(&syn_packet, &mut response_syn).unwrap();
 
-    let ack_packet = build_ack_request(&[], seqnum + 1, &response_syn);
+    let ack_packet = build_ack_request(&[], seqnum + 1, get_ack_seqnum(&response_syn));
     rust_tcp.on_request(&ack_packet, &mut response_ack).unwrap();
 
     // return response_sync because response_ack is empty after sending a ack without data
@@ -169,14 +175,9 @@ fn send_fin_packet(rust_tcp: &mut RustTcp, seqnum: u32, last_response: &[u8]) ->
     response_fin
 }
 
-fn send_data_packet(
-    rust_tcp: &mut RustTcp,
-    seqnum: u32,
-    data: &[u8],
-    last_response: &[u8],
-) -> Vec<u8> {
+fn send_data_packet(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8], ack_seqnum: u32) -> Vec<u8> {
     let mut response_data: Vec<u8> = Vec::new();
-    let data_packet = build_ack_request(data, seqnum, &last_response);
+    let data_packet = build_ack_request(data, seqnum, ack_seqnum);
     rust_tcp
         .on_request(&data_packet, &mut response_data)
         .unwrap();
@@ -220,7 +221,8 @@ fn close_server_connection_after_receiving_fin_packet() {
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
-    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let seqnum = CLIENT_SEQNUM + 1 + (data.len() as u32);
     let _ = send_fin_packet(&mut rust_tcp, seqnum, &response_data);
@@ -250,8 +252,9 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
-    let response_data1 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
-    let response_data2 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data1 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let response_data2 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
@@ -285,7 +288,8 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
-    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 300, data, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 300, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
@@ -311,7 +315,8 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
-    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
@@ -337,7 +342,8 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
@@ -364,11 +370,13 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
 
     let data1 = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let response_data1 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data1, &resp_syn);
+    let ack_seqnum = get_ack_seqnum(&resp_syn);
+    let response_data1 = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data1, ack_seqnum);
 
     let seqnum = CLIENT_SEQNUM.wrapping_add(data1.len() as u32 + 1);
     let data2 = &[0x1, 0x2, 0x3];
-    let response_data2 = send_data_packet(&mut rust_tcp, seqnum, data2, &response_data1);
+    let ack_seqnum = get_ack_seqnum(&response_data1);
+    let response_data2 = send_data_packet(&mut rust_tcp, seqnum, data2, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
