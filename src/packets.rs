@@ -4,8 +4,9 @@ use crate::connection::Connection;
 use crate::errors::RustTcpError;
 use etherparse::{PacketBuilder, TcpHeader};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum TcpState {
+    Closed,
     Listen,
     SynReceived,
     Established,
@@ -40,10 +41,10 @@ pub struct TcpTlb {
 }
 
 impl TcpTlb {
-    pub fn new(connection: &Connection) -> Self {
+    pub fn new() -> Self {
         TcpTlb {
-            state: TcpState::Listen,
-            connection: connection.clone(),
+            state: TcpState::Closed,
+            connection: Default::default(),
             recv_buf: Vec::new(),
             recv: TcpRecvContext {
                 isa: 0,
@@ -58,6 +59,11 @@ impl TcpTlb {
         }
     }
 
+    pub fn with_connection(mut self, conn: Connection) -> Self {
+        self.connection = conn;
+        self.clone()
+    }
+
     pub fn on_request(
         &mut self,
         tcphdr: &TcpHeader,
@@ -65,6 +71,9 @@ impl TcpTlb {
         response: &mut Vec<u8>,
     ) -> Result<(), RustTcpError> {
         match self.state {
+            TcpState::Closed => {
+                return self.on_closed_connection(&tcphdr, payload.len(), response);
+            }
             TcpState::Listen => {
                 if !tcphdr.syn {
                     return Err(RustTcpError::BadState);
@@ -100,6 +109,35 @@ impl TcpTlb {
             }
             TcpState::CloseWait => (),
             TcpState::LastAck => unimplemented!(),
+        }
+
+        Ok(())
+    }
+
+    fn on_closed_connection(
+        &self,
+        tcphdr: &TcpHeader,
+        payload_len: usize,
+        response: &mut Vec<u8>,
+    ) -> Result<(), RustTcpError> {
+        let seqnum = match tcphdr.ack {
+            true => tcphdr.acknowledgment_number,
+            false => 0,
+        };
+
+        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+            .tcp(
+                self.connection.port_src,
+                self.connection.port_dest,
+                seqnum,
+                self.send.window,
+            )
+            .rst()
+            .ack(tcphdr.sequence_number + payload_len as u32)
+            .write(response, &[]);
+
+        if writer.is_err() {
+            return Err(RustTcpError::Internal);
         }
 
         Ok(())
@@ -155,6 +193,15 @@ impl TcpTlb {
         }
 
         Ok(())
+    }
+
+    pub fn open(mut self) -> Self {
+        match self.state {
+            TcpState::Closed => self.state = TcpState::Listen,
+            _ => panic!("Unexpected state when opening new connection"),
+        }
+
+        self
     }
 
     pub fn on_close(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {

@@ -395,3 +395,73 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     assert_eq!(tcphdr2.acknowledgment_number, 3);
     assert_eq!(nbytes_read, 8);
 }
+
+#[test]
+fn send_reset_when_receiving_ack_packet_on_closed_connection() {
+    const CLIENT_SEQNUM: u32 = 100;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
+    let response_data = send_ack_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data, 300);
+
+    // Check response
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+    let expected_seqnum = CLIENT_SEQNUM + 1 + data.len() as u32;
+    assert_eq!(tcphdr.rst, true);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.sequence_number, 300);
+    assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+}
+
+#[test]
+fn send_reset_when_receiving_packet_on_closed_connection() {
+    const CLIENT_SEQNUM: u32 = 100;
+
+    let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut rust_tcp = RustTcp::new(&server_ip);
+
+    let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
+    let response_data = send_data_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, data);
+
+    // Check response
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&response_data).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+    let expected_seqnum = CLIENT_SEQNUM + 1 + data.len() as u32;
+    assert_eq!(tcphdr.rst, true);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.sequence_number, 0);
+    assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+}
+
+fn send_data_packet(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8]) -> Vec<u8> {
+    let mut response_data: Vec<u8> = Vec::new();
+    let data_packet = build_request(data, seqnum);
+    rust_tcp
+        .on_request(&data_packet, &mut response_data)
+        .unwrap();
+
+    response_data
+}
+
+fn build_request(payload: &[u8], seqnum: u32) -> Vec<u8> {
+    let mut request: Vec<u8> = Vec::new();
+
+    PacketBuilder::ipv4(
+        [192, 168, 1, 1], // source
+        [192, 168, 1, 2], // destination
+        64,               // ttl
+    )
+    .tcp(
+        35000,  // source
+        22,     //destination
+        seqnum, //seq
+        10,     // windows size)
+    )
+    .write(&mut request, payload)
+    .unwrap();
+
+    request
+}

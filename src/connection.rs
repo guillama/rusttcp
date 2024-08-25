@@ -4,12 +4,23 @@ use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use std::net::Ipv4Addr;
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Default)]
 pub struct Connection {
     pub ip_src: [u8; 4],
     pub ip_dest: [u8; 4],
     pub port_src: u16,
     pub port_dest: u16,
+}
+
+impl Connection {
+    pub fn new(iphdr: &Ipv4Header, tcphdr: &TcpHeader) -> Self {
+        Connection {
+            ip_src: iphdr.source,
+            ip_dest: iphdr.destination,
+            port_src: tcphdr.source_port,
+            port_dest: tcphdr.destination_port,
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -22,7 +33,7 @@ pub struct RustTcp {
     server_ip: Ipv4Addr,
     conns: HashMap<Connection, TcpTlb>,
     conns_by_name: HashMap<String, Connection>,
-    listening_ports: HashMap<u16, String>,
+    listening_ports: HashMap<u16, (String, TcpTlb)>,
 }
 
 impl RustTcp {
@@ -36,8 +47,10 @@ impl RustTcp {
         }
     }
 
-    pub fn open(&mut self, src_port: u16, name: &str) {
-        self.listening_ports.insert(src_port, name.to_string());
+    pub fn open(&mut self, src_port: u16, name_str: &str) {
+        let tlb = TcpTlb::new().open();
+        let name: String = name_str.to_string();
+        self.listening_ports.insert(src_port, (name, tlb));
     }
 
     #[allow(dead_code)]
@@ -62,13 +75,44 @@ impl RustTcp {
         request: &[u8],
         response: &mut Vec<u8>,
     ) -> Result<(), RustTcpError> {
-        let request_len = request.len();
+        let (iphdr, tcphdr, payload) = self.check_and_parse(request)?;
 
+        let conn = Connection::new(&iphdr, &tcphdr);
+        if let Entry::Occupied(mut e) = self.conns.entry(conn) {
+            let tlb = e.get_mut();
+            return tlb.on_request(&tcphdr, payload, response);
+        }
+
+        let entry = self.listening_ports.remove(&tcphdr.destination_port);
+        if let Some((conn_name, tlb)) = entry {
+            let mut new_tlb: TcpTlb = tlb.with_connection(conn);
+            new_tlb.on_request(&tcphdr, payload, response)?;
+
+            self.conns.insert(conn, new_tlb);
+            self.conns_by_name.insert(conn_name, conn);
+
+            return Ok(());
+        }
+
+        if entry.is_none() {
+            return TcpTlb::new()
+                .with_connection(conn)
+                .on_request(&tcphdr, payload, response);
+        }
+
+        Ok(())
+    }
+
+    fn check_and_parse<'a>(
+        &self,
+        packet: &'a [u8],
+    ) -> Result<(Ipv4Header, TcpHeader, &'a [u8]), RustTcpError> {
+        let request_len = packet.len();
         if request_len < (Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN) {
             return Err(RustTcpError::BadPacketSize(request_len));
         }
 
-        let (iphdr, transport_hdr) = match Ipv4Header::from_slice(&request[..request_len]) {
+        let (iphdr, transport_hdr) = match Ipv4Header::from_slice(packet) {
             Ok((iphdr, tcphdr)) => (iphdr, tcphdr),
             Err(_) => return Err(RustTcpError::BadIpv4Header),
         };
@@ -80,31 +124,7 @@ impl RustTcp {
             Err(_) => return Err(RustTcpError::BadTcpHeader),
         };
 
-        let c = Connection {
-            ip_src: iphdr.source,
-            ip_dest: iphdr.destination,
-            port_src: tcphdr.source_port,
-            port_dest: tcphdr.destination_port,
-        };
-
-        if let Entry::Occupied(mut e) = self.conns.entry(c.clone()) {
-            let tlb = e.get_mut();
-            return tlb.on_request(&tcphdr, payload, response);
-        }
-
-        if let Some(conn_name) = self.listening_ports.remove(&tcphdr.destination_port) {
-            let mut tlb = TcpTlb::new(&c);
-            tlb.on_request(&tcphdr, payload, response)?;
-
-            self.conns.insert(c.clone(), tlb.clone());
-            self.conns_by_name.insert(conn_name, c.clone());
-
-            return Ok(());
-        } else {
-            // Send Reset
-        }
-
-        Ok(())
+        Ok((iphdr, tcphdr, payload))
     }
 
     fn check_ipv4(&self, hdr: &Ipv4Header) -> Result<(), RustTcpError> {
