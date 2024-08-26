@@ -52,7 +52,7 @@ impl TcpTlb {
                 window: 10,
             },
             send: TcpSendContext {
-                isa: 0,
+                isa: 300,
                 next: 301,
                 window: 10,
             },
@@ -72,11 +72,11 @@ impl TcpTlb {
     ) -> Result<(), RustTcpError> {
         match self.state {
             TcpState::Closed => {
-                return self.on_closed_connection(&tcphdr, payload.len(), response);
+                return self.send_reset(&tcphdr, payload.len(), response);
             }
             TcpState::Listen => {
                 if !tcphdr.syn {
-                    return Err(RustTcpError::BadState);
+                    return self.send_reset(&tcphdr, payload.len(), response);
                 }
 
                 self.recv.isa = tcphdr.sequence_number;
@@ -86,7 +86,11 @@ impl TcpTlb {
             }
             TcpState::SynReceived => {
                 if !tcphdr.ack {
-                    return Err(RustTcpError::BadState);
+                    return self.send_reset(&tcphdr, payload.len(), response);
+                }
+
+                if tcphdr.acknowledgment_number != self.send.next {
+                    self.send_reset(&tcphdr, payload.len(), response)?;
                 }
 
                 self.state = TcpState::Established;
@@ -114,7 +118,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_closed_connection(
+    fn send_reset(
         &self,
         tcphdr: &TcpHeader,
         payload_len: usize,

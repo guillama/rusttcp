@@ -449,3 +449,60 @@ fn build_packet(payload: &[u8], seqnum: u32) -> Vec<u8> {
 
     packet
 }
+
+#[test]
+fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
+    let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
+    rust_tcp.open(22, "conn2");
+
+    const CLIENT_SEQNUM: u32 = 100;
+    let response_syn = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
+    let ack_seqnum = get_ack_seqnum(&response_syn).wrapping_add(20000);
+    let resp_ack = send_ack_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, &[], ack_seqnum);
+
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&resp_ack).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+    let expected_seqnum = CLIENT_SEQNUM + 1;
+
+    assert_eq!(tcphdr.rst, true);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.sequence_number, ack_seqnum);
+    assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+}
+
+#[test]
+fn send_reset_when_receiving_bad_ack_during_handshake() {
+    let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
+    rust_tcp.open(22, "conn2");
+
+    const CLIENT_SEQNUM: u32 = 100;
+    let _ = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
+    let resp = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
+
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&resp).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+    let expected_seqnum = CLIENT_SEQNUM + 1;
+
+    assert_eq!(tcphdr.rst, true);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.sequence_number, 0);
+    assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+}
+
+#[test]
+fn send_reset_when_receiving_bad_syn_during_handshake() {
+    let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
+    rust_tcp.open(22, "conn2");
+
+    const CLIENT_SEQNUM: u32 = 100;
+    let resp_ack = send_ack_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, &[], 42);
+
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&resp_ack).unwrap();
+    let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+    let expected_seqnum = CLIENT_SEQNUM + 1;
+
+    assert_eq!(tcphdr.rst, true);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.sequence_number, 42);
+    assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+}
