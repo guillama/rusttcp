@@ -14,7 +14,6 @@ enum TcpState {
     LastAck,
 }
 
-#[allow(dead_code)]
 #[derive(Clone)]
 struct TcpRecvContext {
     isa: u32,
@@ -22,7 +21,6 @@ struct TcpRecvContext {
     window: u16,
 }
 
-#[allow(dead_code)]
 #[derive(Clone)]
 struct TcpSendContext {
     isa: u32,
@@ -34,10 +32,15 @@ struct TcpSendContext {
 pub struct TcpTlb {
     state: TcpState,
     connection: Connection,
-    #[allow(dead_code)]
     recv_buf: Vec<u8>,
     recv: TcpRecvContext,
     send: TcpSendContext,
+}
+
+impl Default for TcpTlb {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TcpTlb {
@@ -72,11 +75,11 @@ impl TcpTlb {
     ) -> Result<(), RustTcpError> {
         match self.state {
             TcpState::Closed => {
-                return self.send_reset(&tcphdr, payload.len(), response);
+                return self.send_reset(tcphdr, payload.len(), response);
             }
             TcpState::Listen => {
                 if !tcphdr.syn {
-                    return self.send_reset(&tcphdr, payload.len(), response);
+                    return self.send_reset(tcphdr, payload.len(), response);
                 }
 
                 self.recv.isa = tcphdr.sequence_number;
@@ -86,11 +89,11 @@ impl TcpTlb {
             }
             TcpState::SynReceived => {
                 if !tcphdr.ack {
-                    return self.send_reset(&tcphdr, payload.len(), response);
+                    return self.send_reset(tcphdr, payload.len(), response);
                 }
 
                 if tcphdr.acknowledgment_number != self.send.next {
-                    self.send_reset(&tcphdr, payload.len(), response)?;
+                    self.send_reset(tcphdr, payload.len(), response)?;
                 }
 
                 self.state = TcpState::Established;

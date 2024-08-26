@@ -40,7 +40,7 @@ impl RustTcp {
     pub fn new(server_ip: &Ipv4Addr) -> Self {
         RustTcp {
             queue: VecDeque::new(),
-            server_ip: server_ip.clone(),
+            server_ip: *server_ip,
             conns: HashMap::new(),
             conns_by_name: HashMap::new(),
             listening_ports: HashMap::new(),
