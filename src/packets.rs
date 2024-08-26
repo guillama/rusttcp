@@ -64,7 +64,7 @@ impl TcpTlb {
         self.clone()
     }
 
-    pub fn on_request(
+    pub fn on_packet(
         &mut self,
         tcphdr: &TcpHeader,
         payload: &[u8],
@@ -81,7 +81,7 @@ impl TcpTlb {
 
                 self.recv.isa = tcphdr.sequence_number;
                 self.recv.next = self.recv.isa + 1;
-                self.on_syn_request(response)?;
+                self.on_syn_packet(response)?;
                 self.state = TcpState::SynReceived;
             }
             TcpState::SynReceived => {
@@ -101,7 +101,7 @@ impl TcpTlb {
                     self.recv_buf.extend(payload.iter());
                 }
 
-                self.on_data_request(response)?;
+                self.on_data_packet(response)?;
 
                 if tcphdr.fin {
                     self.state = TcpState::CloseWait;
@@ -143,7 +143,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_syn_request(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn on_syn_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
         let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
             .tcp(
                 self.connection.port_src,
@@ -162,7 +162,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_data_request(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn on_data_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
         let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
             .tcp(
                 self.connection.port_src,

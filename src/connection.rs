@@ -70,23 +70,19 @@ impl RustTcp {
         Err(RustTcpError::ElementNotFound(name.to_string()))
     }
 
-    pub fn on_request(
-        &mut self,
-        request: &[u8],
-        response: &mut Vec<u8>,
-    ) -> Result<(), RustTcpError> {
-        let (iphdr, tcphdr, payload) = self.check_and_parse(request)?;
+    pub fn on_packet(&mut self, packet: &[u8], response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        let (iphdr, tcphdr, payload) = self.check_and_parse(packet)?;
 
         let conn = Connection::new(&iphdr, &tcphdr);
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
             let tlb = e.get_mut();
-            return tlb.on_request(&tcphdr, payload, response);
+            return tlb.on_packet(&tcphdr, payload, response);
         }
 
         let entry = self.listening_ports.remove(&tcphdr.destination_port);
         if let Some((conn_name, tlb)) = entry {
             let mut new_tlb: TcpTlb = tlb.with_connection(conn);
-            new_tlb.on_request(&tcphdr, payload, response)?;
+            new_tlb.on_packet(&tcphdr, payload, response)?;
 
             self.conns.insert(conn, new_tlb);
             self.conns_by_name.insert(conn_name, conn);
@@ -97,7 +93,7 @@ impl RustTcp {
         if entry.is_none() {
             return TcpTlb::new()
                 .with_connection(conn)
-                .on_request(&tcphdr, payload, response);
+                .on_packet(&tcphdr, payload, response);
         }
 
         Ok(())
@@ -107,9 +103,9 @@ impl RustTcp {
         &self,
         packet: &'a [u8],
     ) -> Result<(Ipv4Header, TcpHeader, &'a [u8]), RustTcpError> {
-        let request_len = packet.len();
-        if request_len < (Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN) {
-            return Err(RustTcpError::BadPacketSize(request_len));
+        let packet_len = packet.len();
+        if packet_len < (Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN) {
+            return Err(RustTcpError::BadPacketSize(packet_len));
         }
 
         let (iphdr, transport_hdr) = match Ipv4Header::from_slice(packet) {
