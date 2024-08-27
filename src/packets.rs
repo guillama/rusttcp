@@ -76,11 +76,11 @@ impl TcpTlb {
     ) -> Result<(), RustTcpError> {
         match self.state {
             TcpState::Closed => {
-                return self.send_reset(tcphdr, payload.len(), response);
+                return self.send_reset_packet(tcphdr, payload.len(), response);
             }
             TcpState::Listen => {
                 if !tcphdr.syn {
-                    return self.send_reset(tcphdr, payload.len(), response);
+                    return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
                 self.recv.isa = tcphdr.sequence_number;
@@ -90,11 +90,11 @@ impl TcpTlb {
             }
             TcpState::SynSent => {
                 if !tcphdr.ack {
-                    return self.send_reset(tcphdr, payload.len(), response);
+                    return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
                 if tcphdr.acknowledgment_number != self.send.next {
-                    self.send_reset(tcphdr, payload.len(), response)?;
+                    self.send_reset_packet(tcphdr, payload.len(), response)?;
                 }
 
                 self.build_ack_packet(response)?;
@@ -102,11 +102,11 @@ impl TcpTlb {
             }
             TcpState::SynReceived => {
                 if !tcphdr.ack {
-                    return self.send_reset(tcphdr, payload.len(), response);
+                    return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
                 if tcphdr.acknowledgment_number != self.send.next {
-                    self.send_reset(tcphdr, payload.len(), response)?;
+                    self.send_reset_packet(tcphdr, payload.len(), response)?;
                 }
 
                 self.state = TcpState::Established;
@@ -121,7 +121,7 @@ impl TcpTlb {
                     self.recv_buf.extend(payload.iter());
                 }
 
-                self.on_data_packet(response)?;
+                self.build_ack_packet(&[], response)?;
 
                 if tcphdr.fin {
                     self.state = TcpState::CloseWait;
@@ -133,7 +133,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn send_reset(
+    fn send_reset_packet(
         &self,
         tcphdr: &TcpHeader,
         payload_len: usize,
@@ -181,25 +181,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_data_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
-        let writer = PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
-            .tcp(
-                self.connection.src_port,
-                self.connection.dest_port,
-                self.send.isa,
-                self.send.window,
-            )
-            .ack(self.recv.next)
-            .write(response, &[]);
-
-        if writer.is_err() {
-            return Err(RustTcpError::Internal);
-        }
-
-        Ok(())
-    }
-
-    fn build_ack_packet(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn build_ack_packet(&mut self, data: &[u8], request: &mut Vec<u8>) -> Result<(), RustTcpError> {
         let server_ip = self.connection.src_ip;
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
@@ -304,7 +286,7 @@ impl TcpTlb {
 
     pub fn on_read(&self, buf: &mut [u8]) -> usize {
         let n = self.recv_buf.len();
-        buf[0..n].clone_from_slice(&self.recv_buf);
+        buf[..n].clone_from_slice(&self.recv_buf);
         n
     }
 }
