@@ -2,7 +2,6 @@ use crate::errors::RustTcpError;
 use crate::packets::TcpTlb;
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
-use std::net::Ipv4Addr;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Default, Debug)]
 pub struct Connection {
@@ -44,10 +43,10 @@ pub struct RustTcp {
 }
 
 impl RustTcp {
-    pub fn new(src_ip: &Ipv4Addr) -> Self {
+    pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {
             queue: VecDeque::new(),
-            src_ip: src_ip.octets(),
+            src_ip,
             conns: HashMap::new(),
             conns_by_name: HashMap::new(),
             listen_ports: HashMap::new(),
