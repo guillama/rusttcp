@@ -32,6 +32,7 @@ pub enum RustTcpMode {
 pub enum UserEvent {
     Close(String),
     Open(String),
+    Send(String, Vec<u8>),
 }
 
 pub struct RustTcp {
@@ -92,6 +93,12 @@ impl RustTcp {
         }
 
         Err(RustTcpError::NameNotFound(name.to_string()))
+    }
+
+    pub fn send(&mut self, name: &str, buf: Vec<u8>) -> Result<usize, RustTcpError> {
+        let usr_event = UserEvent::Send(name.to_string(), buf);
+        self.queue.push_front(usr_event);
+        Ok(0)
     }
 
     pub fn on_packet(&mut self, packet: &[u8], response: &mut Vec<u8>) -> Result<(), RustTcpError> {
@@ -170,6 +177,10 @@ impl RustTcp {
             Some(UserEvent::Close(name)) => {
                 let tlb = self.tlb_from_connection(name)?;
                 tlb.on_close(request)?;
+            }
+            Some(UserEvent::Send(name, buf)) => {
+                let tlb = self.tlb_from_connection(name)?;
+                tlb.on_send(buf, request)?;
             }
             None => return Err(RustTcpError::ElementNotFound),
         }

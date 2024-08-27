@@ -4,7 +4,7 @@ use crate::connection::Connection;
 use crate::errors::RustTcpError;
 use etherparse::{PacketBuilder, TcpHeader};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum TcpState {
     Closed,
     Listen,
@@ -97,7 +97,9 @@ impl TcpTlb {
                     self.send_reset_packet(tcphdr, payload.len(), response)?;
                 }
 
-                self.build_ack_packet(response)?;
+                self.recv.isa = tcphdr.sequence_number;
+                self.recv.next = self.recv.isa + 1;
+                self.build_ack_packet(&[], response)?;
                 self.state = TcpState::Established;
             }
             TcpState::SynReceived => {
@@ -190,7 +192,7 @@ impl TcpTlb {
         let writer = PacketBuilder::ipv4(client_ip, server_ip, 64)
             .tcp(client_port, server_port, self.send.isa, self.send.window)
             .ack(self.recv.next)
-            .write(request, &[]);
+            .write(request, data);
 
         if writer.is_err() {
             return Err(RustTcpError::Internal);
@@ -288,5 +290,15 @@ impl TcpTlb {
         let n = self.recv_buf.len();
         buf[..n].clone_from_slice(&self.recv_buf);
         n
+    }
+
+    pub fn on_send(&mut self, buf: Vec<u8>, request: &mut Vec<u8>) -> Result<usize, RustTcpError> {
+        if self.state != TcpState::Established {
+            return Err(RustTcpError::BadState);
+        }
+
+        self.build_ack_packet(&buf, request)?;
+
+        Ok(buf.len())
     }
 }
