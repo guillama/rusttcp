@@ -4,27 +4,35 @@ use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use std::net::Ipv4Addr;
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Default)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Default, Debug)]
 pub struct Connection {
-    pub ip_src: [u8; 4],
-    pub ip_dest: [u8; 4],
-    pub port_src: u16,
-    pub port_dest: u16,
+    pub src_ip: [u8; 4],
+    pub dest_ip: [u8; 4],
+    pub src_port: u16,
+    pub dest_port: u16,
 }
 
 impl Connection {
     pub fn new(iphdr: &Ipv4Header, tcphdr: &TcpHeader) -> Self {
         Connection {
-            ip_src: iphdr.source,
-            ip_dest: iphdr.destination,
-            port_src: tcphdr.source_port,
-            port_dest: tcphdr.destination_port,
+            src_ip: iphdr.source,
+            dest_ip: iphdr.destination,
+            src_port: tcphdr.source_port,
+            dest_port: tcphdr.destination_port,
         }
     }
 }
 
+#[derive(Debug)]
+pub enum RustTcpMode {
+    Passive(u16),
+    Active([u8; 4], u16),
+}
+
+#[derive(Debug)]
 pub enum UserEvent {
     Close(String),
+    Open(String),
 }
 
 pub struct RustTcp {
@@ -46,10 +54,30 @@ impl RustTcp {
         }
     }
 
-    pub fn open(&mut self, src_port: u16, name_str: &str) {
-        let tlb = TcpTlb::new().open();
+    pub fn open(&mut self, mode: RustTcpMode, name_str: &str) -> Result<(), RustTcpError> {
         let name: String = name_str.to_string();
-        self.listening_ports.insert(src_port, (name, tlb));
+        let tlb = TcpTlb::new();
+
+        match mode {
+            RustTcpMode::Passive(src_port) => {
+                self.listen_ports.insert(src_port, (name, tlb.listen()?));
+            }
+            RustTcpMode::Active(server_ip, server_port) => {
+                let c = Connection {
+                    src_ip: server_ip,
+                    src_port: server_port,
+                    dest_ip: self.src_ip,
+                    dest_port: 36000,
+                };
+                self.conns.insert(c, tlb.with_connection(c));
+                self.conns_by_name.insert(name.clone(), c);
+
+                let usr_event = UserEvent::Open(name);
+                self.queue.push_front(usr_event);
+            }
+        }
+
+        Ok(())
     }
 
     pub fn close(&mut self, name: &str) {
@@ -133,20 +161,27 @@ impl RustTcp {
         Ok(())
     }
 
-    pub fn on_user_event(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    pub fn on_user_event(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
         let event: Option<UserEvent> = self.queue.pop_front();
         match event {
-            Some(UserEvent::Close(name)) => self.on_close(name, response)?,
-            _ => return Ok(()),
+            Some(UserEvent::Open(name)) => {
+                let tlb = self.tlb_from_connection(name)?;
+                tlb.send_syn(request)?;
+            }
+            Some(UserEvent::Close(name)) => {
+                let tlb = self.tlb_from_connection(name)?;
+                tlb.on_close(request)?;
+            }
+            None => return Err(RustTcpError::ElementNotFound),
         }
 
         Ok(())
     }
 
-    fn on_close(&mut self, name: String, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn tlb_from_connection(&mut self, name: String) -> Result<&mut TcpTlb, RustTcpError> {
         if let Some(c) = self.conns_by_name.get_mut(&name) {
             if let Some(tlb) = self.conns.get_mut(c) {
-                return tlb.on_close(response);
+                return Ok(tlb);
             }
         }
 

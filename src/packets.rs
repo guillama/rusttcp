@@ -8,6 +8,7 @@ use etherparse::{PacketBuilder, TcpHeader};
 enum TcpState {
     Closed,
     Listen,
+    SynSent,
     SynReceived,
     Established,
     CloseWait,
@@ -84,8 +85,20 @@ impl TcpTlb {
 
                 self.recv.isa = tcphdr.sequence_number;
                 self.recv.next = self.recv.isa + 1;
-                self.on_syn_packet(response)?;
+                self.send_syn_ack_packet(response)?;
                 self.state = TcpState::SynReceived;
+            }
+            TcpState::SynSent => {
+                if !tcphdr.ack {
+                    return self.send_reset(tcphdr, payload.len(), response);
+                }
+
+                if tcphdr.acknowledgment_number != self.send.next {
+                    self.send_reset(tcphdr, payload.len(), response)?;
+                }
+
+                self.build_ack_packet(response)?;
+                self.state = TcpState::Established;
             }
             TcpState::SynReceived => {
                 if !tcphdr.ack {
@@ -114,8 +127,7 @@ impl TcpTlb {
                     self.state = TcpState::CloseWait;
                 }
             }
-            TcpState::CloseWait => (),
-            TcpState::LastAck => unimplemented!(),
+            _ => unimplemented!(),
         }
 
         Ok(())
@@ -132,10 +144,10 @@ impl TcpTlb {
             false => 0,
         };
 
-        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+        let writer = PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
-                self.connection.port_src,
-                self.connection.port_dest,
+                self.connection.src_port,
+                self.connection.dest_port,
                 seqnum,
                 self.send.window,
             )
@@ -150,14 +162,14 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_syn_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
-        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
-            .tcp(
-                self.connection.port_src,
-                self.connection.port_dest,
-                self.send.isa,
-                self.send.window,
-            )
+    fn send_syn_ack_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        let server_ip = self.connection.dest_ip;
+        let server_port = self.connection.dest_port;
+        let client_ip = self.connection.src_ip;
+        let client_port = self.connection.src_port;
+
+        let writer = PacketBuilder::ipv4(server_ip, client_ip, 64)
+            .tcp(server_port, client_port, self.send.isa, self.send.window)
             .syn()
             .ack(self.recv.next)
             .write(response, &[]);
@@ -170,15 +182,33 @@ impl TcpTlb {
     }
 
     fn on_data_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
-        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+        let writer = PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
-                self.connection.port_src,
-                self.connection.port_dest,
+                self.connection.src_port,
+                self.connection.dest_port,
                 self.send.isa,
                 self.send.window,
             )
             .ack(self.recv.next)
             .write(response, &[]);
+
+        if writer.is_err() {
+            return Err(RustTcpError::Internal);
+        }
+
+        Ok(())
+    }
+
+    fn build_ack_packet(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        let server_ip = self.connection.src_ip;
+        let server_port = self.connection.src_port;
+        let client_ip = self.connection.dest_ip;
+        let client_port = self.connection.dest_port;
+
+        let writer = PacketBuilder::ipv4(client_ip, server_ip, 64)
+            .tcp(client_port, server_port, self.send.isa, self.send.window)
+            .ack(self.recv.next)
+            .write(request, &[]);
 
         if writer.is_err() {
             return Err(RustTcpError::Internal);
@@ -202,20 +232,50 @@ impl TcpTlb {
         Ok(())
     }
 
-    pub fn open(mut self) -> Self {
+    pub fn listen(mut self) -> Result<Self, RustTcpError> {
         match self.state {
             TcpState::Closed => self.state = TcpState::Listen,
             _ => panic!("Unexpected state when opening new connection"),
         }
 
-        self
+        Ok(self)
     }
 
-    pub fn on_close(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    pub fn send_syn(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        match self.state {
+            TcpState::Closed => {
+                self.build_syn_packet(request)?;
+                self.state = TcpState::SynSent;
+            }
+            _ => unimplemented!(),
+        }
+
+        Ok(())
+    }
+
+    fn build_syn_packet(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+        let server_ip = self.connection.src_ip;
+        let server_port = self.connection.src_port;
+        let client_ip = self.connection.dest_ip;
+        let client_port = self.connection.dest_port;
+
+        let writer = PacketBuilder::ipv4(client_ip, server_ip, 64)
+            .tcp(client_port, server_port, self.send.isa, self.send.window)
+            .syn()
+            .write(request, &[]);
+
+        if writer.is_err() {
+            return Err(RustTcpError::Internal);
+        }
+
+        Ok(())
+    }
+
+    pub fn on_close(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
         match self.state {
             TcpState::CloseWait => {
+                self.build_fin_packet(request)?;
                 self.state = TcpState::LastAck;
-                self.build_fin_packet(response)?;
             }
             _ => unimplemented!(),
         }
@@ -224,10 +284,10 @@ impl TcpTlb {
     }
 
     fn build_fin_packet(&self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
-        let writer = PacketBuilder::ipv4(self.connection.ip_dest, self.connection.ip_src, 64)
+        let writer = PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
-                self.connection.port_src,
-                self.connection.port_dest,
+                self.connection.src_port,
+                self.connection.dest_port,
                 self.send.isa,
                 self.send.window,
             )

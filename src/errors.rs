@@ -4,6 +4,7 @@ use std::fmt;
 pub enum RustTcpError {
     Internal,
     NameNotFound(String),
+    ElementNotFound,
     BadPacketSize(usize),
     BadAddress([u8; 4]),
     BadProto(u8),
@@ -18,6 +19,7 @@ impl fmt::Display for RustTcpError {
         match self {
             RustTcpError::Internal => write!(f, "Internal error"),
             RustTcpError::NameNotFound(ref name) => write!(f, "Can't find name : {name}"),
+            RustTcpError::ElementNotFound => write!(f, "Can't find element"),
             RustTcpError::BadPacketSize(size) => write!(f, "Bad Packet size : {}", size),
             RustTcpError::BadProto(proto) => write!(f, "Error: Bad Ipv4 Protocol : {}", proto),
             RustTcpError::BadAddress(addr) => {

@@ -7,8 +7,8 @@ use std::{net::Ipv4Addr, u32::MAX};
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
     let expected_resp_iphdr = build_ipv4_header([192, 168, 1, 2], [192, 168, 1, 1]);
-    let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
-    rust_tcp.open(22, "conn1");
+    let mut server = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
+    server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let response = receive_syn_packet(&mut server, CLIENT_SEQNUM);
@@ -19,9 +19,10 @@ fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
 
     assert_eq!(response.len(), Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN);
     assert_eq!(resp_iphdr, expected_resp_iphdr);
+    assert_eq!(resp_tcphdr.source_port, 22);
+    assert_eq!(resp_tcphdr.destination_port, 35000);
     assert_eq!(resp_tcphdr.syn, true);
     assert_eq!(resp_tcphdr.ack, true);
-    assert_eq!(resp_tcphdr.destination_port, 22);
     assert_eq!(resp_tcphdr.acknowledgment_number, CLIENT_SEQNUM + 1);
 }
 
@@ -71,7 +72,7 @@ fn build_ipv4_header(ip_src: [u8; 4], ip_dst: [u8; 4]) -> Ipv4Header {
 #[test]
 fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
-    rust_tcp.open(22, "conn1");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     // Send SYN packet
     const CLIENT_SEQNUM: u32 = 100;
@@ -128,7 +129,7 @@ fn send_fin_packet_close_server_connection() {
 
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
 
-    rust_tcp.open(22, "conn1");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -205,7 +206,7 @@ fn close_server_connection_after_receiving_fin_packet() {
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
 
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -216,7 +217,6 @@ fn close_server_connection_after_receiving_fin_packet() {
     let _ = send_fin_packet(&mut rust_tcp, seqnum, &response_data);
 
     let mut fin_packet: Vec<u8> = Vec::new();
-
     rust_tcp.close("conn2");
     rust_tcp.on_user_event(&mut fin_packet).unwrap();
 
@@ -236,7 +236,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
 
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -272,7 +272,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
 
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -299,7 +299,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
 
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
@@ -326,7 +326,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
 
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
@@ -353,7 +353,7 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let server_ip = Ipv4Addr::from([192, 168, 1, 2]);
     let mut rust_tcp = RustTcp::new(&server_ip);
 
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_handshake(&mut rust_tcp, CLIENT_SEQNUM);
     let data1 = &[0x1, 0x2, 0x3, 0x4, 0x5];
@@ -453,7 +453,7 @@ fn build_packet(payload: &[u8], seqnum: u32) -> Vec<u8> {
 #[test]
 fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let response_syn = receive_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
@@ -473,7 +473,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
 #[test]
 fn send_reset_when_receiving_bad_ack_during_handshake() {
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let _ = receive_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
@@ -492,7 +492,7 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
 #[test]
 fn send_reset_when_receiving_bad_syn_during_handshake() {
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
-    rust_tcp.open(22, "conn2");
+    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let resp_ack = send_ack_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, &[], 42);
@@ -505,4 +505,61 @@ fn send_reset_when_receiving_bad_syn_during_handshake() {
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.sequence_number, 42);
     assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+}
+
+#[test]
+fn send_syn_packet_on_opening_active_connection() {
+    use RustTcpMode::Active;
+
+    let ip_client = Ipv4Addr::from([192, 168, 1, 1]);
+    let mut client = RustTcp::new(&ip_client);
+
+    let dst_ip = Ipv4Addr::from([192, 168, 1, 2]).octets();
+    client.open(Active(dst_ip, 22), "client").unwrap();
+
+    let mut response: Vec<u8> = Vec::new();
+    client.on_user_event(&mut response).unwrap();
+
+    let (iphdr, tcphdr_slice) = Ipv4Header::from_slice(&response).unwrap();
+    let (tcphdr, payload) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+    let expected_resp_iphdr = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2]);
+
+    assert_eq!(iphdr, expected_resp_iphdr);
+    assert_eq!(tcphdr.source_port, 36000);
+    assert_eq!(tcphdr.destination_port, 22);
+    assert_eq!(tcphdr.syn, true);
+    assert_eq!(tcphdr.rst, false);
+    assert_eq!(tcphdr.ack, false);
+    assert_eq!(payload, &[]);
+}
+
+#[test]
+fn send_ack_packet_on_receiving_syn_ack_packet() {
+    use RustTcpMode::{Active, Passive};
+
+    let ip_client = Ipv4Addr::from([192, 168, 1, 1]);
+    let ip_server = Ipv4Addr::from([192, 168, 1, 2]);
+    let mut client = RustTcp::new(&ip_client);
+    let mut server = RustTcp::new(&ip_server);
+
+    let dst_ip = Ipv4Addr::from(ip_server).octets();
+    client.open(Active(dst_ip, 22), "client").unwrap();
+    server.open(Passive(22), "server").unwrap();
+
+    let mut syn_request: Vec<u8> = Vec::new();
+    let mut syn_ack_resp: Vec<u8> = Vec::new();
+
+    client.on_user_event(&mut syn_request).unwrap();
+    server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
+
+    let mut ack_resp: Vec<u8> = Vec::new();
+    client.on_packet(&syn_ack_resp, &mut ack_resp).unwrap();
+
+    let (_, tcphdr_slice) = Ipv4Header::from_slice(&ack_resp).unwrap();
+    let (tcphdr, payload) = TcpHeader::from_slice(tcphdr_slice).unwrap();
+
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.syn, false);
+    assert_eq!(tcphdr.rst, false);
+    assert_eq!(payload, &[]);
 }
