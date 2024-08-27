@@ -6,12 +6,12 @@ use std::{net::Ipv4Addr, u32::MAX};
 
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
-    let expected_resp_iphdr = build_ipv4_header();
+    let expected_resp_iphdr = build_ipv4_header([192, 168, 1, 2], [192, 168, 1, 1]);
     let mut rust_tcp = RustTcp::new(&Ipv4Addr::from([192, 168, 1, 2]));
     rust_tcp.open(22, "conn1");
 
     const CLIENT_SEQNUM: u32 = 100;
-    let response = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM);
+    let response = receive_syn_packet(&mut server, CLIENT_SEQNUM);
 
     // Check ACK response
     let (resp_iphdr, resp_tcphdr) = Ipv4Header::from_slice(&response[..]).unwrap();
@@ -25,7 +25,7 @@ fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
     assert_eq!(resp_tcphdr.acknowledgment_number, CLIENT_SEQNUM + 1);
 }
 
-fn send_syn_packet(rust_tcp: &mut RustTcp, seqnum: u32) -> Vec<u8> {
+fn receive_syn_packet(rust_tcp: &mut RustTcp, seqnum: u32) -> Vec<u8> {
     let syn_packet = build_syn_packet(seqnum);
     let mut response: Vec<u8> = Vec::new();
     rust_tcp.on_packet(&syn_packet, &mut response).unwrap();
@@ -54,13 +54,13 @@ fn build_syn_packet(seqnum: u32) -> Vec<u8> {
     packet
 }
 
-fn build_ipv4_header() -> Ipv4Header {
+fn build_ipv4_header(ip_src: [u8; 4], ip_dst: [u8; 4]) -> Ipv4Header {
     let mut iphdr = Ipv4Header::new(
         TcpHeader::MIN_LEN as u16,
         64, // ttl
         IpNumber::TCP,
-        [192, 168, 1, 2], //source
-        [192, 168, 1, 1], //destination
+        ip_src,
+        ip_dst,
     )
     .unwrap();
 
@@ -75,7 +75,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
 
     // Send SYN packet
     const CLIENT_SEQNUM: u32 = 100;
-    let response_syn = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM);
+    let response_syn = receive_syn_packet(&mut rust_tcp, CLIENT_SEQNUM);
 
     // Send ACK + DATA packet
     let ack_seqnum = get_ack_seqnum(&response_syn) + 1;
@@ -147,7 +147,7 @@ fn send_fin_packet_close_server_connection() {
 }
 
 fn do_handshake(rust_tcp: &mut RustTcp, seqnum: u32) -> Vec<u8> {
-    let response_syn = send_syn_packet(rust_tcp, seqnum);
+    let response_syn = receive_syn_packet(rust_tcp, seqnum);
     let _ = send_ack_packet(rust_tcp, seqnum + 1, &[], get_ack_seqnum(&response_syn));
 
     // return response_sync because no response_ack is expected
@@ -456,7 +456,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
     rust_tcp.open(22, "conn2");
 
     const CLIENT_SEQNUM: u32 = 100;
-    let response_syn = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
+    let response_syn = receive_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
     let ack_seqnum = get_ack_seqnum(&response_syn).wrapping_add(20000);
     let resp_ack = send_ack_packet(&mut rust_tcp, CLIENT_SEQNUM + 1, &[], ack_seqnum);
 
@@ -476,8 +476,8 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
     rust_tcp.open(22, "conn2");
 
     const CLIENT_SEQNUM: u32 = 100;
-    let _ = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
-    let resp = send_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
+    let _ = receive_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
+    let resp = receive_syn_packet(&mut rust_tcp, CLIENT_SEQNUM + 1);
 
     let (_, tcphdr_slice) = Ipv4Header::from_slice(&resp).unwrap();
     let (tcphdr, _) = TcpHeader::from_slice(tcphdr_slice).unwrap();

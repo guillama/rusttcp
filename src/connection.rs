@@ -23,27 +23,26 @@ impl Connection {
     }
 }
 
-#[allow(dead_code)]
 pub enum UserEvent {
     Close(String),
 }
 
 pub struct RustTcp {
     queue: VecDeque<UserEvent>,
-    server_ip: Ipv4Addr,
+    src_ip: [u8; 4],
     conns: HashMap<Connection, TcpTlb>,
     conns_by_name: HashMap<String, Connection>,
-    listening_ports: HashMap<u16, (String, TcpTlb)>,
+    listen_ports: HashMap<u16, (String, TcpTlb)>,
 }
 
 impl RustTcp {
-    pub fn new(server_ip: &Ipv4Addr) -> Self {
+    pub fn new(src_ip: &Ipv4Addr) -> Self {
         RustTcp {
             queue: VecDeque::new(),
-            server_ip: *server_ip,
+            src_ip: src_ip.octets(),
             conns: HashMap::new(),
             conns_by_name: HashMap::new(),
-            listening_ports: HashMap::new(),
+            listen_ports: HashMap::new(),
         }
     }
 
@@ -53,13 +52,11 @@ impl RustTcp {
         self.listening_ports.insert(src_port, (name, tlb));
     }
 
-    #[allow(dead_code)]
     pub fn close(&mut self, name: &str) {
         let usr_event = UserEvent::Close(name.to_string());
         self.queue.push_front(usr_event);
     }
 
-    #[allow(dead_code)]
     pub fn read(&self, name: &str, buf: &mut [u8]) -> Result<usize, RustTcpError> {
         if let Some(c) = self.conns_by_name.get(name) {
             if let Some(tlb) = self.conns.get(c) {
@@ -67,7 +64,7 @@ impl RustTcp {
             }
         }
 
-        Err(RustTcpError::ElementNotFound(name.to_string()))
+        Err(RustTcpError::NameNotFound(name.to_string()))
     }
 
     pub fn on_packet(&mut self, packet: &[u8], response: &mut Vec<u8>) -> Result<(), RustTcpError> {
@@ -79,7 +76,7 @@ impl RustTcp {
             return tlb.on_packet(&tcphdr, payload, response);
         }
 
-        let entry = self.listening_ports.remove(&tcphdr.destination_port);
+        let entry = self.listen_ports.remove(&tcphdr.destination_port);
         if let Some((conn_name, tlb)) = entry {
             let mut new_tlb: TcpTlb = tlb.with_connection(conn);
             new_tlb.on_packet(&tcphdr, payload, response)?;
@@ -91,6 +88,7 @@ impl RustTcp {
         }
 
         if entry.is_none() {
+            // Use temporary TLB to send Reset packet
             return TcpTlb::new()
                 .with_connection(conn)
                 .on_packet(&tcphdr, payload, response);
@@ -124,7 +122,7 @@ impl RustTcp {
     }
 
     fn check_ipv4(&self, hdr: &Ipv4Header) -> Result<(), RustTcpError> {
-        if hdr.destination != self.server_ip.octets() {
+        if hdr.destination != self.src_ip {
             return Err(RustTcpError::BadAddress(hdr.destination));
         }
 
@@ -152,6 +150,6 @@ impl RustTcp {
             }
         }
 
-        Err(RustTcpError::ElementNotFound(name.to_string()))
+        Err(RustTcpError::NameNotFound(name.to_string()))
     }
 }
