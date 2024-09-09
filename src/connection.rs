@@ -1,7 +1,10 @@
 use crate::errors::RustTcpError;
 use crate::packets::TcpTlb;
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
-use std::collections::{hash_map::Entry, HashMap, VecDeque};
+use std::{
+    collections::{hash_map::Entry, HashMap, VecDeque},
+    io,
+};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Default, Debug)]
 pub struct Connection {
@@ -101,7 +104,10 @@ impl RustTcp {
         Ok(0)
     }
 
-    pub fn on_packet(&mut self, packet: &[u8], response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    pub fn on_packet<T>(&mut self, packet: &[u8], response: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         let (iphdr, tcphdr, payload) = self.check_and_parse(packet)?;
 
         let conn = Connection::new(&iphdr, &tcphdr);
@@ -167,7 +173,10 @@ impl RustTcp {
         Ok(())
     }
 
-    pub fn on_user_event(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    pub fn on_user_event<T>(&mut self, request: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         let event: Option<UserEvent> = self.queue.pop_front();
         match event {
             Some(UserEvent::Open(name)) => {

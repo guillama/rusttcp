@@ -1,5 +1,7 @@
 extern crate etherparse;
 
+use std::io;
+
 use crate::connection::Connection;
 use crate::errors::RustTcpError;
 use etherparse::{PacketBuilder, TcpHeader};
@@ -68,12 +70,15 @@ impl TcpTlb {
         self.clone()
     }
 
-    pub fn on_packet(
+    pub fn on_packet<T>(
         &mut self,
         tcphdr: &TcpHeader,
         payload: &[u8],
-        response: &mut Vec<u8>,
-    ) -> Result<(), RustTcpError> {
+        response: &mut T,
+    ) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         match self.state {
             TcpState::Closed => {
                 return self.send_reset_packet(tcphdr, payload.len(), response);
@@ -135,12 +140,15 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn send_reset_packet(
+    fn send_reset_packet<T>(
         &self,
         tcphdr: &TcpHeader,
         payload_len: usize,
-        response: &mut Vec<u8>,
-    ) -> Result<(), RustTcpError> {
+        response: &mut T,
+    ) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         let seqnum = match tcphdr.ack {
             true => tcphdr.acknowledgment_number,
             false => 0,
@@ -160,7 +168,10 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn send_syn_ack_packet(&mut self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn send_syn_ack_packet<T>(&mut self, response: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         let server_ip = self.connection.dest_ip;
         let server_port = self.connection.dest_port;
         let client_ip = self.connection.src_ip;
@@ -175,7 +186,10 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn build_ack_packet(&mut self, data: &[u8], request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn build_ack_packet<T>(&mut self, data: &[u8], request: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         let server_ip = self.connection.src_ip;
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
@@ -213,7 +227,10 @@ impl TcpTlb {
         Ok(self)
     }
 
-    pub fn send_syn(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    pub fn send_syn<T>(&mut self, request: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         match self.state {
             TcpState::Closed => {
                 self.build_syn_packet(request)?;
@@ -225,7 +242,10 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn build_syn_packet(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn build_syn_packet<T>(&mut self, request: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         let server_ip = self.connection.src_ip;
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
@@ -239,7 +259,10 @@ impl TcpTlb {
         Ok(())
     }
 
-    pub fn on_close(&mut self, request: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    pub fn on_close<T>(&mut self, request: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         match self.state {
             TcpState::CloseWait => {
                 self.build_fin_packet(request)?;
@@ -251,7 +274,10 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn build_fin_packet(&self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
+    fn build_fin_packet<T>(&self, response: &mut T) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
                 self.connection.src_port,
@@ -272,7 +298,10 @@ impl TcpTlb {
         n
     }
 
-    pub fn on_write(&mut self, buf: Vec<u8>, request: &mut Vec<u8>) -> Result<usize, RustTcpError> {
+    pub fn on_write<T>(&mut self, buf: &[u8], request: &mut T) -> Result<usize, RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
         if self.state != TcpState::Established {
             return Err(RustTcpError::BadTcpState);
         }
