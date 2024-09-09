@@ -1,28 +1,34 @@
+extern crate etherparse;
+
+use etherparse::err::packet::BuildWriteError;
+use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
 pub enum RustTcpError {
-    Internal,
+    PacketBuild(BuildWriteError),
     NameNotFound(String),
     ElementNotFound,
     BadPacketSize(usize),
-    BadAddress([u8; 4]),
-    BadProto(u8),
+    BadIpv4Address([u8; 4]),
+    BadIPv4Proto(u8),
     BadIpv4Header,
     BadTcpHeader,
-    BadState,
+    BadTcpState,
     UnexpectedSeqNum,
 }
 
 impl fmt::Display for RustTcpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RustTcpError::Internal => write!(f, "Internal error"),
-            RustTcpError::NameNotFound(ref name) => write!(f, "Can't find name : {name}"),
-            RustTcpError::ElementNotFound => write!(f, "Can't find element"),
-            RustTcpError::BadPacketSize(size) => write!(f, "Bad Packet size : {}", size),
-            RustTcpError::BadProto(proto) => write!(f, "Error: Bad Ipv4 Protocol : {}", proto),
-            RustTcpError::BadAddress(addr) => {
+            RustTcpError::PacketBuild(e) => write!(f, "Error: Can't build packet : {}", e),
+            RustTcpError::NameNotFound(ref name) => {
+                write!(f, "Error: Can't find element with name : {}", name)
+            }
+            RustTcpError::ElementNotFound => write!(f, "Error: Can't find element"),
+            RustTcpError::BadPacketSize(size) => write!(f, "Error: Bad Packet size : {}", size),
+            RustTcpError::BadIPv4Proto(proto) => write!(f, "Error: Bad Ipv4 Protocol : {}", proto),
+            RustTcpError::BadIpv4Address(addr) => {
                 write!(f, "Error: Bad destination address : {:?}", addr)
             }
             RustTcpError::BadIpv4Header => {
@@ -31,12 +37,27 @@ impl fmt::Display for RustTcpError {
             RustTcpError::BadTcpHeader => {
                 write!(f, "Error: Bad Tcp Header")
             }
-            RustTcpError::BadState => {
+            RustTcpError::BadTcpState => {
                 write!(f, "Error: Bad Tcp State")
             }
             RustTcpError::UnexpectedSeqNum => {
                 write!(f, "Error: Unexpected Sequence Number")
             }
         }
+    }
+}
+
+impl Error for RustTcpError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            RustTcpError::PacketBuild(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<BuildWriteError> for RustTcpError {
+    fn from(value: BuildWriteError) -> Self {
+        Self::PacketBuild(value)
     }
 }

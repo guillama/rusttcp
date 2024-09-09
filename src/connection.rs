@@ -157,11 +157,11 @@ impl RustTcp {
 
     fn check_ipv4(&self, hdr: &Ipv4Header) -> Result<(), RustTcpError> {
         if hdr.destination != self.src_ip {
-            return Err(RustTcpError::BadAddress(hdr.destination));
+            return Err(RustTcpError::BadIpv4Address(hdr.destination));
         }
 
         if hdr.protocol != IpNumber::TCP {
-            return Err(RustTcpError::BadProto(hdr.protocol.into()));
+            return Err(RustTcpError::BadIPv4Proto(hdr.protocol.into()));
         }
 
         Ok(())

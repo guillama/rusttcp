@@ -146,7 +146,7 @@ impl TcpTlb {
             false => 0,
         };
 
-        let writer = PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
+        PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
                 self.connection.src_port,
                 self.connection.dest_port,
@@ -155,11 +155,7 @@ impl TcpTlb {
             )
             .rst()
             .ack(tcphdr.sequence_number + payload_len as u32)
-            .write(response, &[]);
-
-        if writer.is_err() {
-            return Err(RustTcpError::Internal);
-        }
+            .write(response, &[])?;
 
         Ok(())
     }
@@ -170,15 +166,11 @@ impl TcpTlb {
         let client_ip = self.connection.src_ip;
         let client_port = self.connection.src_port;
 
-        let writer = PacketBuilder::ipv4(server_ip, client_ip, 64)
+        PacketBuilder::ipv4(server_ip, client_ip, 64)
             .tcp(server_port, client_port, self.send.isa, self.send.window)
             .syn()
             .ack(self.recv.next)
-            .write(response, &[]);
-
-        if writer.is_err() {
-            return Err(RustTcpError::Internal);
-        }
+            .write(response, &[])?;
 
         Ok(())
     }
@@ -189,14 +181,10 @@ impl TcpTlb {
         let client_ip = self.connection.dest_ip;
         let client_port = self.connection.dest_port;
 
-        let writer = PacketBuilder::ipv4(client_ip, server_ip, 64)
+        PacketBuilder::ipv4(client_ip, server_ip, 64)
             .tcp(client_port, server_port, self.send.isa, self.send.window)
             .ack(self.recv.next)
-            .write(request, data);
-
-        if writer.is_err() {
-            return Err(RustTcpError::Internal);
-        }
+            .write(request, data)?;
 
         Ok(())
     }
@@ -243,14 +231,10 @@ impl TcpTlb {
         let client_ip = self.connection.dest_ip;
         let client_port = self.connection.dest_port;
 
-        let writer = PacketBuilder::ipv4(client_ip, server_ip, 64)
+        PacketBuilder::ipv4(client_ip, server_ip, 64)
             .tcp(client_port, server_port, self.send.isa, self.send.window)
             .syn()
-            .write(request, &[]);
-
-        if writer.is_err() {
-            return Err(RustTcpError::Internal);
-        }
+            .write(request, &[])?;
 
         Ok(())
     }
@@ -268,7 +252,7 @@ impl TcpTlb {
     }
 
     fn build_fin_packet(&self, response: &mut Vec<u8>) -> Result<(), RustTcpError> {
-        let writer = PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
+        PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
                 self.connection.src_port,
                 self.connection.dest_port,
@@ -277,11 +261,7 @@ impl TcpTlb {
             )
             .ack(self.recv.next)
             .fin()
-            .write(response, &[]);
-
-        if writer.is_err() {
-            return Err(RustTcpError::Internal);
-        }
+            .write(response, &[])?;
 
         Ok(())
     }
@@ -294,7 +274,7 @@ impl TcpTlb {
 
     pub fn on_send(&mut self, buf: Vec<u8>, request: &mut Vec<u8>) -> Result<usize, RustTcpError> {
         if self.state != TcpState::Established {
-            return Err(RustTcpError::BadState);
+            return Err(RustTcpError::BadTcpState);
         }
 
         self.build_ack_packet(&buf, request)?;
