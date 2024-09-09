@@ -559,7 +559,7 @@ fn send_data_packet_on_user_request() {
     let data: Vec<u8> = vec![1, 2, 3, 4, 5, 6];
 
     let payload_len = TcpHeader::MIN_LEN + data.len();
-    client.send("client", data).unwrap();
+    client.write("client", data).unwrap();
     client.on_user_event(&mut data_request).unwrap();
 
     let (iphdr, tcphdr, payload) = extract_packet(&data_request);

@@ -272,7 +272,7 @@ impl TcpTlb {
         n
     }
 
-    pub fn on_send(&mut self, buf: Vec<u8>, request: &mut Vec<u8>) -> Result<usize, RustTcpError> {
+    pub fn on_write(&mut self, buf: Vec<u8>, request: &mut Vec<u8>) -> Result<usize, RustTcpError> {
         if self.state != TcpState::Established {
             return Err(RustTcpError::BadTcpState);
         }
