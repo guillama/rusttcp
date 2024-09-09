@@ -32,21 +32,21 @@ pub enum RustTcpMode {
 }
 
 #[derive(Debug)]
-pub enum UserEvent {
-    Close(String),
-    Open(String),
-    Write(String, Vec<u8>),
+pub enum UserEvent<'a> {
+    Close(&'a str),
+    Open(&'a str),
+    Write(&'a str, &'a [u8]),
 }
 
-pub struct RustTcp {
-    queue: VecDeque<UserEvent>,
+pub struct RustTcp<'a> {
+    queue: VecDeque<UserEvent<'a>>,
     src_ip: [u8; 4],
     conns: HashMap<Connection, TcpTlb>,
-    conns_by_name: HashMap<String, Connection>,
-    listen_ports: HashMap<u16, (String, TcpTlb)>,
+    conns_by_name: HashMap<&'a str, Connection>,
+    listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
 }
 
-impl RustTcp {
+impl<'a> RustTcp<'a> {
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {
             queue: VecDeque::new(),
@@ -57,8 +57,7 @@ impl RustTcp {
         }
     }
 
-    pub fn open(&mut self, mode: RustTcpMode, name_str: &str) -> Result<(), RustTcpError> {
-        let name: String = name_str.to_string();
+    pub fn open(&mut self, mode: RustTcpMode, name: &'a str) -> Result<(), RustTcpError> {
         let tlb = TcpTlb::new();
 
         match mode {
@@ -73,7 +72,7 @@ impl RustTcp {
                     dest_port: 36000,
                 };
                 self.conns.insert(c, tlb.with_connection(c));
-                self.conns_by_name.insert(name.clone(), c);
+                self.conns_by_name.insert(name, c);
 
                 let usr_event = UserEvent::Open(name);
                 self.queue.push_front(usr_event);
@@ -83,8 +82,8 @@ impl RustTcp {
         Ok(())
     }
 
-    pub fn close(&mut self, name: &str) {
-        let usr_event = UserEvent::Close(name.to_string());
+    pub fn close(&mut self, name: &'a str) {
+        let usr_event = UserEvent::Close(name);
         self.queue.push_front(usr_event);
     }
 
@@ -98,8 +97,8 @@ impl RustTcp {
         Err(RustTcpError::NameNotFound(name.to_string()))
     }
 
-    pub fn write(&mut self, name: &str, buf: Vec<u8>) -> Result<usize, RustTcpError> {
-        let usr_event = UserEvent::Write(name.to_string(), buf);
+    pub fn write(&mut self, name: &'a str, buf: &'a [u8]) -> Result<usize, RustTcpError> {
+        let usr_event = UserEvent::Write(name, buf);
         self.queue.push_front(usr_event);
         Ok(0)
     }
@@ -137,10 +136,10 @@ impl RustTcp {
         Ok(())
     }
 
-    fn check_and_parse<'a>(
+    fn check_and_parse<'header>(
         &self,
-        packet: &'a [u8],
-    ) -> Result<(Ipv4Header, TcpHeader, &'a [u8]), RustTcpError> {
+        packet: &'header [u8],
+    ) -> Result<(Ipv4Header, TcpHeader, &'header [u8]), RustTcpError> {
         let packet_len = packet.len();
         if packet_len < (Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN) {
             return Err(RustTcpError::BadPacketSize(packet_len));
@@ -187,9 +186,9 @@ impl RustTcp {
                 let tlb = self.tlb_from_connection(name)?;
                 tlb.on_close(request)?;
             }
-            Some(UserEvent::Write(name, buf)) => {
+            Some(UserEvent::Write(name, user_buf)) => {
                 let tlb = self.tlb_from_connection(name)?;
-                tlb.on_write(buf, request)?;
+                tlb.on_write(user_buf, request)?;
             }
             None => return Err(RustTcpError::ElementNotFound),
         }
@@ -197,7 +196,7 @@ impl RustTcp {
         Ok(())
     }
 
-    fn tlb_from_connection(&mut self, name: String) -> Result<&mut TcpTlb, RustTcpError> {
+    fn tlb_from_connection(&mut self, name: &'a str) -> Result<&mut TcpTlb, RustTcpError> {
         if let Some(c) = self.conns_by_name.get_mut(&name) {
             if let Some(tlb) = self.conns.get_mut(c) {
                 return Ok(tlb);
