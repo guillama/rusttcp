@@ -65,7 +65,7 @@ impl TcpTlb {
         }
     }
 
-    pub fn with_connection(mut self, conn: Connection) -> Self {
+    pub fn connection(mut self, conn: Connection) -> Self {
         self.connection = conn;
         self.clone()
     }

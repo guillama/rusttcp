@@ -38,6 +38,7 @@ pub enum UserEvent<'a> {
     Write(&'a str, &'a [u8]),
 }
 
+#[derive(Default)]
 pub struct RustTcp<'a> {
     queue: VecDeque<UserEvent<'a>>,
     src_ip: [u8; 4],
@@ -49,11 +50,9 @@ pub struct RustTcp<'a> {
 impl<'a> RustTcp<'a> {
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {
-            queue: VecDeque::new(),
             src_ip,
-            conns: HashMap::new(),
-            conns_by_name: HashMap::new(),
-            listen_ports: HashMap::new(),
+            default_window_size: 10,
+            ..Default::default()
         }
     }
 
@@ -71,7 +70,7 @@ impl<'a> RustTcp<'a> {
                     dest_ip: self.src_ip,
                     dest_port: 36000,
                 };
-                self.conns.insert(c, tlb.with_connection(c));
+                self.conns.insert(c, tlb.connection(c));
                 self.conns_by_name.insert(name, c);
 
                 let usr_event = UserEvent::Open(name);
@@ -117,7 +116,7 @@ impl<'a> RustTcp<'a> {
 
         let entry = self.listen_ports.remove(&tcphdr.destination_port);
         if let Some((conn_name, tlb)) = entry {
-            let mut new_tlb: TcpTlb = tlb.with_connection(conn);
+            let mut new_tlb: TcpTlb = tlb.connection(conn);
             new_tlb.on_packet(&tcphdr, payload, response)?;
 
             self.conns.insert(conn, new_tlb);
@@ -129,17 +128,17 @@ impl<'a> RustTcp<'a> {
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
             return TcpTlb::new()
-                .with_connection(conn)
+                .connection(conn)
                 .on_packet(&tcphdr, payload, response);
         }
 
         Ok(())
     }
 
-    fn check_and_parse<'header>(
+    fn check_and_parse<'pkt>(
         &self,
-        packet: &'header [u8],
-    ) -> Result<(Ipv4Header, TcpHeader, &'header [u8]), RustTcpError> {
+        packet: &'pkt [u8],
+    ) -> Result<(Ipv4Header, TcpHeader, &'pkt [u8]), RustTcpError> {
         let packet_len = packet.len();
         if packet_len < (Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN) {
             return Err(RustTcpError::BadPacketSize(packet_len));
@@ -203,6 +202,6 @@ impl<'a> RustTcp<'a> {
             }
         }
 
-        Err(RustTcpError::NameNotFound(name.to_string()))
+        Err(RustTcpError::NameNotFound(name.into()))
     }
 }

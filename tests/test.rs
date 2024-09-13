@@ -423,8 +423,8 @@ fn build_packet(payload: &[u8], seqnum: u32) -> Vec<u8> {
     )
     .tcp(
         35000,  // source
-        22,     //destination
-        seqnum, //seq
+        22,     // destination
+        seqnum, // seq
         10,     // windows size)
     )
     .write(&mut packet, payload)
@@ -539,31 +539,30 @@ fn send_ack_packet_after_receiving_syn_ack_packet() {
 }
 
 #[test]
-fn send_data_packet_on_user_request() {
+fn send_data_with_length_lower_than_windows_size_on_user_request() {
     use RustTcpMode::{Active, Passive};
 
     let mut client = RustTcp::new([192, 168, 1, 1]);
     let mut server = RustTcp::new([192, 168, 1, 2]);
-
     client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
     server.open(Passive(22), "server").unwrap();
 
+    // 3-way handshake
     let mut syn_request: Vec<u8> = Vec::new();
     let mut syn_ack_resp: Vec<u8> = Vec::new();
     client.on_user_event(&mut syn_request).unwrap();
     server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
-
     client.on_packet(&syn_ack_resp, &mut vec![]).unwrap();
 
+    // Send data
     let mut data_request: Vec<u8> = Vec::new();
     let data: Vec<u8> = vec![1, 2, 3, 4, 5, 6];
-
-    let payload_len = TcpHeader::MIN_LEN + data.len();
     client.write("client", &data).unwrap();
     client.on_user_event(&mut data_request).unwrap();
 
     let (iphdr, tcphdr, payload) = extract_packet(&data_request);
     let expected_ack = seqnum_from_packet(&syn_ack_resp) + 1;
+    let payload_len = TcpHeader::MIN_LEN + data.len();
     let expected_iphdr = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len);
 
     assert_eq!(iphdr, expected_iphdr);
