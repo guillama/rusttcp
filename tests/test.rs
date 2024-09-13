@@ -572,3 +572,55 @@ fn send_data_with_length_lower_than_windows_size_on_user_request() {
     assert_eq!(tcphdr.syn, false);
     assert_eq!(tcphdr.rst, false);
 }
+
+#[test]
+fn send_data_with_length_bigger_than_windows_size_on_user_request() {
+    use RustTcpMode::{Active, Passive};
+
+    const WINDOW_SIZE: u16 = 5;
+
+    let mut client = RustTcp::new([192, 168, 1, 1]).window_size(WINDOW_SIZE);
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
+    server.open(Passive(22), "server").unwrap();
+
+    // 3-way handshake
+    let mut syn_request: Vec<u8> = Vec::new();
+    let mut syn_ack_resp: Vec<u8> = Vec::new();
+    client.on_user_event(&mut syn_request).unwrap();
+    server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
+    client.on_packet(&syn_ack_resp, &mut vec![]).unwrap();
+
+    // Send data
+    let data: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7, 8];
+    client.write("client", &data).unwrap();
+
+    let mut data_request: Vec<u8> = Vec::new();
+    let next_data_size = client.on_user_event(&mut data_request).unwrap();
+
+    let mut data_request2: Vec<u8> = Vec::new();
+    let next_data_size2 = client.on_user_event(&mut data_request2).unwrap();
+
+    let expected_ack = seqnum_from_packet(&syn_ack_resp) + 1;
+
+    let (iphdr1, tcphdr1, payload1) = extract_packet(&data_request);
+    let payload_len1 = TcpHeader::MIN_LEN + WINDOW_SIZE as usize;
+    let expected_iphdr1 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len1);
+
+    let (iphdr2, tcphdr2, payload2) = extract_packet(&data_request2);
+    let payload_len2 = TcpHeader::MIN_LEN + (data.len() - WINDOW_SIZE as usize);
+    let expected_iphdr2 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len2);
+
+    assert_eq!(next_data_size, 3);
+    assert_eq!(next_data_size2, 0);
+
+    assert_eq!(iphdr1, expected_iphdr1);
+    assert_eq!(payload1, &[1, 2, 3, 4, 5]);
+    assert_eq!(tcphdr1.ack, true);
+    assert_eq!(tcphdr1.acknowledgment_number, expected_ack);
+
+    assert_eq!(iphdr2, expected_iphdr2);
+    assert_eq!(payload2, &[6, 7, 8]);
+    assert_eq!(tcphdr2.ack, true);
+    assert_eq!(tcphdr2.acknowledgment_number, expected_ack);
+}

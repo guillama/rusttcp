@@ -36,6 +36,7 @@ pub enum UserEvent<'a> {
     Close(&'a str),
     Open(&'a str),
     Write(&'a str, &'a [u8]),
+    WriteNext(&'a str),
 }
 
 #[derive(Default)]
@@ -45,6 +46,7 @@ pub struct RustTcp<'a> {
     conns: HashMap<Connection, TcpTlb>,
     conns_by_name: HashMap<&'a str, Connection>,
     listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
+    default_window_size: u16,
 }
 
 impl<'a> RustTcp<'a> {
@@ -56,8 +58,13 @@ impl<'a> RustTcp<'a> {
         }
     }
 
+    pub fn window_size(mut self, value: u16) -> Self {
+        self.default_window_size = value;
+        self
+    }
+
     pub fn open(&mut self, mode: RustTcpMode, name: &'a str) -> Result<(), RustTcpError> {
-        let tlb = TcpTlb::new();
+        let tlb = TcpTlb::new(self.default_window_size);
 
         match mode {
             RustTcpMode::Passive(src_port) => {
@@ -127,7 +134,7 @@ impl<'a> RustTcp<'a> {
 
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
-            return TcpTlb::new()
+            return TcpTlb::new(0)
                 .connection(conn)
                 .on_packet(&tcphdr, payload, response);
         }
@@ -171,11 +178,13 @@ impl<'a> RustTcp<'a> {
         Ok(())
     }
 
-    pub fn on_user_event<T>(&mut self, request: &mut T) -> Result<(), RustTcpError>
+    pub fn on_user_event<T>(&mut self, request: &mut T) -> Result<usize, RustTcpError>
     where
         T: io::Write + Sized,
     {
+        let mut remain_size = 0;
         let event: Option<UserEvent> = self.queue.pop_front();
+
         match event {
             Some(UserEvent::Open(name)) => {
                 let tlb = self.tlb_from_connection(name)?;
@@ -187,12 +196,21 @@ impl<'a> RustTcp<'a> {
             }
             Some(UserEvent::Write(name, user_buf)) => {
                 let tlb = self.tlb_from_connection(name)?;
-                tlb.on_write(user_buf, request)?;
+                remain_size = tlb.on_write(user_buf, request)?;
+
+                if remain_size > 0 {
+                    let event = UserEvent::WriteNext(name);
+                    self.queue.push_front(event);
+                }
+            }
+            Some(UserEvent::WriteNext(name)) => {
+                let tlb = self.tlb_from_connection(name)?;
+                remain_size = tlb.on_write(&[], request)?;
             }
             None => return Err(RustTcpError::ElementNotFound),
         }
 
-        Ok(())
+        Ok(remain_size)
     }
 
     fn tlb_from_connection(&mut self, name: &'a str) -> Result<&mut TcpTlb, RustTcpError> {

@@ -1,13 +1,15 @@
 extern crate etherparse;
 
+use std::cmp;
 use std::io;
 
 use crate::connection::Connection;
 use crate::errors::RustTcpError;
 use etherparse::{PacketBuilder, TcpHeader};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 enum TcpState {
+    #[default]
     Closed,
     Listen,
     SynSent,
@@ -17,21 +19,23 @@ enum TcpState {
     LastAck,
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 struct TcpRecvContext {
     isa: u32,
     next: u32,
-    window: u16,
+    window_size: u16,
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 struct TcpSendContext {
     isa: u32,
     next: u32,
-    window: u16,
+    window_size: u16,
+    buf: Vec<u8>,
+    buf_index: usize,
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct TcpTlb {
     state: TcpState,
     connection: Connection,
@@ -40,28 +44,24 @@ pub struct TcpTlb {
     send: TcpSendContext,
 }
 
-impl Default for TcpTlb {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TcpTlb {
-    pub fn new() -> Self {
+    const DEFAULT_ISA: u32 = 300;
+
+    pub fn new(window_size: u16) -> Self {
+        let default_isa = TcpTlb::DEFAULT_ISA;
+
         TcpTlb {
-            state: TcpState::Closed,
-            connection: Default::default(),
-            recv_buf: Vec::new(),
             recv: TcpRecvContext {
-                isa: 0,
-                next: 0,
-                window: 10,
+                window_size,
+                ..Default::default()
             },
             send: TcpSendContext {
-                isa: 300,
-                next: 301,
-                window: 10,
+                isa: default_isa,
+                next: default_isa + 1,
+                window_size,
+                ..Default::default()
             },
+            ..Default::default()
         }
     }
 
@@ -159,7 +159,7 @@ impl TcpTlb {
                 self.connection.src_port,
                 self.connection.dest_port,
                 seqnum,
-                self.send.window,
+                self.send.window_size,
             )
             .rst()
             .ack(tcphdr.sequence_number + payload_len as u32)
@@ -178,7 +178,12 @@ impl TcpTlb {
         let client_port = self.connection.src_port;
 
         PacketBuilder::ipv4(server_ip, client_ip, 64)
-            .tcp(server_port, client_port, self.send.isa, self.send.window)
+            .tcp(
+                server_port,
+                client_port,
+                self.send.isa,
+                self.send.window_size,
+            )
             .syn()
             .ack(self.recv.next)
             .write(response, &[])?;
@@ -186,7 +191,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn build_ack_packet<T>(&mut self, data: &[u8], request: &mut T) -> Result<(), RustTcpError>
+    fn build_ack_packet<T>(&self, data: &[u8], request: &mut T) -> Result<usize, RustTcpError>
     where
         T: io::Write + Sized,
     {
@@ -194,17 +199,23 @@ impl TcpTlb {
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
         let client_port = self.connection.dest_port;
+        let max_send_size = cmp::min(data.len(), self.recv.window_size as usize);
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(client_port, server_port, self.send.isa, self.send.window)
+            .tcp(
+                client_port,
+                server_port,
+                self.send.isa,
+                self.send.window_size,
+            )
             .ack(self.recv.next)
-            .write(request, data)?;
+            .write(request, &data[..max_send_size])?;
 
-        Ok(())
+        Ok(max_send_size)
     }
 
     fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {
-        let upper_bound: u64 = self.recv.next as u64 + self.recv.window as u64 - 1;
+        let upper_bound: u64 = self.recv.next as u64 + self.recv.window_size as u64 - 1;
         let next: u64 = self.recv.next as u64;
 
         if min < next || min > upper_bound {
@@ -252,7 +263,12 @@ impl TcpTlb {
         let client_port = self.connection.dest_port;
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(client_port, server_port, self.send.isa, self.send.window)
+            .tcp(
+                client_port,
+                server_port,
+                self.send.isa,
+                self.send.window_size,
+            )
             .syn()
             .write(request, &[])?;
 
@@ -283,7 +299,7 @@ impl TcpTlb {
                 self.connection.src_port,
                 self.connection.dest_port,
                 self.send.isa,
-                self.send.window,
+                self.send.window_size,
             )
             .ack(self.recv.next)
             .fin()
@@ -306,8 +322,15 @@ impl TcpTlb {
             return Err(RustTcpError::BadTcpState);
         }
 
-        self.build_ack_packet(&buf, request)?;
+        if !buf.is_empty() {
+            self.send.buf.extend(buf.iter());
+            self.send.buf_index = 0;
+        }
 
-        Ok(buf.len())
+        let data_size = self.build_ack_packet(&self.send.buf[self.send.buf_index..], request)?;
+        self.send.buf_index += data_size;
+
+        let remain_size = self.send.buf.len() - self.send.buf_index;
+        Ok(remain_size)
     }
 }
