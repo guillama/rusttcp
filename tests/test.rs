@@ -347,7 +347,7 @@ fn send_ack_packet_after_receiving_syn_ack_packet() {
 }
 
 #[test]
-fn send_data_with_length_lower_than_windows_size_on_user_request() {
+fn send_user_data_with_length_within_the_window_size() {
     use RustTcpMode::{Active, Passive};
 
     let mut client = RustTcp::new([192, 168, 1, 1]);
@@ -375,7 +375,7 @@ fn send_data_with_length_lower_than_windows_size_on_user_request() {
 }
 
 #[test]
-fn send_data_with_length_bigger_than_windows_size_on_user_request() {
+fn send_user_data_with_length_bigger_than_the_window_size() {
     use RustTcpMode::{Active, Passive};
 
     const WINDOW_SIZE: u16 = 5;
@@ -392,7 +392,7 @@ fn send_data_with_length_bigger_than_windows_size_on_user_request() {
     let data = &[1, 2, 3, 4, 5, 6, 7, 8];
     client.write("client", data).unwrap();
 
-    let (iphdr1, tcphdr1, payload1, next_data_size) = process_user_event_with_extract(&mut client);
+    let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
     let payload_len1 = TcpHeader::MIN_LEN + WINDOW_SIZE as usize;
     let expected_iphdr1 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len1);
 
@@ -400,16 +400,57 @@ fn send_data_with_length_bigger_than_windows_size_on_user_request() {
     let payload_len2 = TcpHeader::MIN_LEN + (data.len() - WINDOW_SIZE as usize);
     let expected_iphdr2 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len2);
 
-    assert_eq!(next_data_size, 3);
-    assert_eq!(next_data_size2, 0);
-
+    assert_eq!(next_data_size1, 3);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, &[1, 2, 3, 4, 5]);
     assert_eq!(tcphdr1.ack, true);
     assert_eq!(tcphdr1.acknowledgment_number, expected_acknum);
 
+    assert_eq!(next_data_size2, 0);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, &[6, 7, 8]);
+    assert_eq!(tcphdr2.ack, true);
+    assert_eq!(tcphdr2.acknowledgment_number, expected_acknum);
+}
+
+#[test]
+fn send_several_user_data_within_the_window_size() {
+    use RustTcpMode::{Active, Passive};
+
+    const WINDOW_SIZE: u16 = 5;
+
+    let mut client = RustTcp::new([192, 168, 1, 1]).window_size(WINDOW_SIZE);
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
+    server.open(Passive(22), "server").unwrap();
+
+    // 3-way handshake
+    let expected_acknum = do_handshake(&mut client, &mut server);
+
+    // Send data
+    let data1 = &[1, 2, 3, 4];
+    client.write("client", data1).unwrap();
+
+    let data2 = &[5, 6, 7];
+    client.write("client", data2).unwrap();
+
+    let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
+    let payload_len1 = TcpHeader::MIN_LEN + data1.len() as usize;
+    let expected_iphdr1 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len1);
+
+    let (iphdr2, tcphdr2, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
+    let payload_len2 = TcpHeader::MIN_LEN + (data2.len() as usize);
+    let expected_iphdr2 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len2);
+
+    assert_eq!(next_data_size1, 0);
+    assert_eq!(iphdr1, expected_iphdr1);
+    assert_eq!(payload1, data1);
+    assert_eq!(tcphdr1.ack, true);
+    assert_eq!(tcphdr1.acknowledgment_number, expected_acknum);
+
+    assert_eq!(next_data_size2, 0);
+    assert_eq!(iphdr2, expected_iphdr2);
+    assert_eq!(payload2, data2);
     assert_eq!(tcphdr2.ack, true);
     assert_eq!(tcphdr2.acknowledgment_number, expected_acknum);
 }

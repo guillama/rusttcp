@@ -1,6 +1,7 @@
 extern crate etherparse;
 
 use std::cmp;
+use std::collections::VecDeque;
 use std::io;
 
 use crate::connection::Connection;
@@ -31,8 +32,8 @@ struct TcpSendContext {
     isa: u32,
     next: u32,
     window_size: u16,
-    buf: Vec<u8>,
-    buf_index: usize,
+    bufs: VecDeque<Vec<u8>>,
+    buf_index: VecDeque<usize>,
 }
 
 #[derive(Default, Clone)]
@@ -323,14 +324,23 @@ impl TcpTlb {
         }
 
         if !buf.is_empty() {
-            self.send.buf.extend(buf.iter());
-            self.send.buf_index = 0;
+            self.send.bufs.push_back(buf.to_vec());
+            self.send.buf_index.push_back(0);
         }
 
-        let data_size = self.build_ack_packet(&self.send.buf[self.send.buf_index..], request)?;
-        self.send.buf_index += data_size;
+        let packet: &Vec<u8> = self.send.bufs.front().unwrap();
+        let index: &usize = self.send.buf_index.front().unwrap();
+        let data_size = self.build_ack_packet(&packet[*index..], request)?;
 
-        let remain_size = self.send.buf.len() - self.send.buf_index;
+        let index: &mut usize = self.send.buf_index.front_mut().unwrap();
+        *index += data_size;
+
+        let remain_size = packet.len() - *index;
+        if remain_size == 0 {
+            self.send.bufs.pop_front();
+            self.send.buf_index.pop_front();
+        }
+
         Ok(remain_size)
     }
 }

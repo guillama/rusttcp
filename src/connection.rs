@@ -105,7 +105,7 @@ impl<'a> RustTcp<'a> {
 
     pub fn write(&mut self, name: &'a str, buf: &'a [u8]) -> Result<usize, RustTcpError> {
         let usr_event = UserEvent::Write(name, buf);
-        self.queue.push_front(usr_event);
+        self.queue.push_back(usr_event);
         Ok(0)
     }
 
