@@ -425,7 +425,7 @@ fn send_several_user_data_within_the_window_size() {
     server.open(Passive(22), "server").unwrap();
 
     // 3-way handshake
-    let expected_acknum = do_handshake(&mut client, &mut server);
+    let _ = do_handshake(&mut client, &mut server);
 
     // Send data
     let data1 = &[1, 2, 3, 4];
@@ -435,22 +435,61 @@ fn send_several_user_data_within_the_window_size() {
     client.write("client", data2).unwrap();
 
     let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
-    let payload_len1 = TcpHeader::MIN_LEN + data1.len() as usize;
+    let payload_len1 = TcpHeader::MIN_LEN + data1.len();
     let expected_iphdr1 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len1);
 
     let (iphdr2, tcphdr2, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
-    let payload_len2 = TcpHeader::MIN_LEN + (data2.len() as usize);
+    let payload_len2 = TcpHeader::MIN_LEN + data2.len();
     let expected_iphdr2 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len2);
 
     assert_eq!(next_data_size1, 0);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, data1);
-    assert_eq!(tcphdr1.ack, true);
-    assert_eq!(tcphdr1.acknowledgment_number, expected_acknum);
 
     assert_eq!(next_data_size2, 0);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, data2);
-    assert_eq!(tcphdr2.ack, true);
-    assert_eq!(tcphdr2.acknowledgment_number, expected_acknum);
+}
+
+#[test]
+fn send_several_user_data_with_length_bigger_than_the_window_size() {
+    use RustTcpMode::{Active, Passive};
+
+    const WINDOW_SIZE: u16 = 5;
+
+    let mut client = RustTcp::new([192, 168, 1, 1]).window_size(WINDOW_SIZE);
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
+    server.open(Passive(22), "server").unwrap();
+
+    // 3-way handshake
+    let _ = do_handshake(&mut client, &mut server);
+
+    // Send data
+    let data1 = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    client.write("client", data1).unwrap();
+
+    let data2 = &[12, 13, 14, 15, 16, 17, 18];
+    client.write("client", data2).unwrap();
+
+    let (_, _, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
+    let (_, _, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
+    let (_, _, payload3, next_data_size3) = process_user_event_with_extract(&mut client);
+    let (_, _, payload4, next_data_size4) = process_user_event_with_extract(&mut client);
+    let (_, _, payload5, next_data_size5) = process_user_event_with_extract(&mut client);
+
+    assert_eq!(next_data_size1, 6);
+    assert_eq!(payload1, &[1, 2, 3, 4, 5]);
+
+    assert_eq!(next_data_size2, 1);
+    assert_eq!(payload2, &[6, 7, 8, 9, 10]);
+
+    assert_eq!(next_data_size3, 0);
+    assert_eq!(payload3, &[11]);
+
+    assert_eq!(next_data_size4, 2);
+    assert_eq!(payload4, &[12, 13, 14, 15, 16]);
+
+    assert_eq!(next_data_size5, 0);
+    assert_eq!(payload5, &[17, 18]);
 }

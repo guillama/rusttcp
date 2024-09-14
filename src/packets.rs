@@ -200,7 +200,7 @@ impl TcpTlb {
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
         let client_port = self.connection.dest_port;
-        let max_send_size = cmp::min(data.len(), self.recv.window_size as usize);
+        let send_size = cmp::min(data.len(), self.recv.window_size as usize);
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
             .tcp(
@@ -210,9 +210,9 @@ impl TcpTlb {
                 self.send.window_size,
             )
             .ack(self.recv.next)
-            .write(request, &data[..max_send_size])?;
+            .write(request, &data[..send_size])?;
 
-        Ok(max_send_size)
+        Ok(send_size)
     }
 
     fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {

@@ -199,13 +199,16 @@ impl<'a> RustTcp<'a> {
                 remain_size = tlb.on_write(user_buf, request)?;
 
                 if remain_size > 0 {
-                    let event = UserEvent::WriteNext(name);
-                    self.queue.push_front(event);
+                    self.queue.push_front(UserEvent::WriteNext(name));
                 }
             }
             Some(UserEvent::WriteNext(name)) => {
                 let tlb = self.tlb_from_connection(name)?;
                 remain_size = tlb.on_write(&[], request)?;
+
+                if remain_size > 0 {
+                    self.queue.push_front(UserEvent::WriteNext(name));
+                }
             }
             None => return Err(RustTcpError::ElementNotFound),
         }
