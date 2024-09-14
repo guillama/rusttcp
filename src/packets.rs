@@ -46,19 +46,15 @@ pub struct TcpTlb {
 }
 
 impl TcpTlb {
-    const DEFAULT_ISA: u32 = 300;
-
-    pub fn new(window_size: u16) -> Self {
-        let default_isa = TcpTlb::DEFAULT_ISA;
-
+    pub fn new(window_size: u16, isa: u32) -> Self {
         TcpTlb {
             recv: TcpRecvContext {
                 window_size,
                 ..Default::default()
             },
             send: TcpSendContext {
-                isa: default_isa,
-                next: default_isa + 1,
+                isa,
+                next: isa + 1,
                 window_size,
                 ..Default::default()
             },
@@ -206,7 +202,7 @@ impl TcpTlb {
             .tcp(
                 client_port,
                 server_port,
-                self.send.isa,
+                self.send.next,
                 self.send.window_size,
             )
             .ack(self.recv.next)
@@ -331,6 +327,8 @@ impl TcpTlb {
         let packet: &Vec<u8> = self.send.bufs.front().unwrap();
         let index: &usize = self.send.buf_index.front().unwrap();
         let data_size = self.build_ack_packet(&packet[*index..], request)?;
+
+        self.send.next = self.send.next.wrapping_add(data_size as u32);
 
         let index: &mut usize = self.send.buf_index.front_mut().unwrap();
         *index += data_size;

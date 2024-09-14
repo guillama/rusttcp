@@ -47,6 +47,7 @@ pub struct RustTcp<'a> {
     conns_by_name: HashMap<&'a str, Connection>,
     listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
     default_window_size: u16,
+    default_seqnum: u32,
 }
 
 impl<'a> RustTcp<'a> {
@@ -63,8 +64,13 @@ impl<'a> RustTcp<'a> {
         self
     }
 
+    pub fn sequence_number(mut self, value: u32) -> Self {
+        self.default_seqnum = value;
+        self
+    }
+
     pub fn open(&mut self, mode: RustTcpMode, name: &'a str) -> Result<(), RustTcpError> {
-        let tlb = TcpTlb::new(self.default_window_size);
+        let tlb = TcpTlb::new(self.default_window_size, self.default_seqnum);
 
         match mode {
             RustTcpMode::Passive(src_port) => {
@@ -134,7 +140,7 @@ impl<'a> RustTcp<'a> {
 
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
-            return TcpTlb::new(0)
+            return TcpTlb::new(0, 0)
                 .connection(conn)
                 .on_packet(&tcphdr, payload, response);
         }

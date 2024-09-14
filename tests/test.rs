@@ -379,8 +379,11 @@ fn send_user_data_with_length_bigger_than_the_window_size() {
     use RustTcpMode::{Active, Passive};
 
     const WINDOW_SIZE: u16 = 5;
+    const CLIENT_SEQNUM: u32 = 500;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]).window_size(WINDOW_SIZE);
+    let mut client = RustTcp::new([192, 168, 1, 1])
+        .window_size(WINDOW_SIZE)
+        .sequence_number(CLIENT_SEQNUM);
     let mut server = RustTcp::new([192, 168, 1, 2]);
     client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
     server.open(Passive(22), "server").unwrap();
@@ -403,12 +406,14 @@ fn send_user_data_with_length_bigger_than_the_window_size() {
     assert_eq!(next_data_size1, 3);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, &[1, 2, 3, 4, 5]);
+    assert_eq!(tcphdr1.sequence_number, 501);
     assert_eq!(tcphdr1.ack, true);
     assert_eq!(tcphdr1.acknowledgment_number, expected_acknum);
 
     assert_eq!(next_data_size2, 0);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, &[6, 7, 8]);
+    assert_eq!(tcphdr2.sequence_number, 506);
     assert_eq!(tcphdr2.ack, true);
     assert_eq!(tcphdr2.acknowledgment_number, expected_acknum);
 }
@@ -418,8 +423,11 @@ fn send_several_user_data_within_the_window_size() {
     use RustTcpMode::{Active, Passive};
 
     const WINDOW_SIZE: u16 = 5;
+    const CLIENT_SEQNUM: u32 = 20;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]).window_size(WINDOW_SIZE);
+    let mut client = RustTcp::new([192, 168, 1, 1])
+        .window_size(WINDOW_SIZE)
+        .sequence_number(CLIENT_SEQNUM);
     let mut server = RustTcp::new([192, 168, 1, 2]);
     client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
     server.open(Passive(22), "server").unwrap();
@@ -445,10 +453,12 @@ fn send_several_user_data_within_the_window_size() {
     assert_eq!(next_data_size1, 0);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, data1);
+    assert_eq!(tcphdr1.sequence_number, 21);
 
     assert_eq!(next_data_size2, 0);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, data2);
+    assert_eq!(tcphdr2.sequence_number, 25);
 }
 
 #[test]
