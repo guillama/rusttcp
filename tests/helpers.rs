@@ -203,6 +203,8 @@ pub fn request_packet_event_with_extract(
 pub fn do_handshake(client: &mut RustTcp, server: &mut RustTcp) -> u32 {
     let mut syn_request: Vec<u8> = Vec::new();
     let mut syn_ack_resp: Vec<u8> = Vec::new();
+    let mut client_ack: Vec<u8> = Vec::new();
+
     client
         .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
         .unwrap();
@@ -210,7 +212,8 @@ pub fn do_handshake(client: &mut RustTcp, server: &mut RustTcp) -> u32 {
 
     client.on_user_event(&mut syn_request).unwrap();
     server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
-    client.on_packet(&syn_ack_resp, &mut vec![]).unwrap();
+    client.on_packet(&syn_ack_resp, &mut client_ack).unwrap();
+    server.on_packet(&client_ack, &mut vec![]).unwrap();
 
     seqnum_from(&syn_ack_resp) + 1
 }
