@@ -39,7 +39,7 @@ pub enum UserEvent<'a> {
     WriteNext(&'a str),
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct RustTcp<'a> {
     queue: VecDeque<UserEvent<'a>>,
     src_ip: [u8; 4],

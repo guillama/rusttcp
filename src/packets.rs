@@ -20,14 +20,14 @@ enum TcpState {
     LastAck,
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 struct TcpRecvContext {
     isa: u32,
     next: u32,
     window_size: u16,
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 struct TcpSendContext {
     isa: u32,
     next: u32,
@@ -36,7 +36,7 @@ struct TcpSendContext {
     buf_index: VecDeque<usize>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TcpTlb {
     state: TcpState,
     connection: Connection,
