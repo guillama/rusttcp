@@ -30,7 +30,7 @@ fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
 
 #[test]
 fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     // Send SYN packet
@@ -55,7 +55,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
 fn send_fin_packet_close_server_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -77,7 +77,7 @@ fn send_fin_packet_close_server_connection() {
 fn close_server_connection_after_receiving_fin_packet() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -102,7 +102,7 @@ fn close_server_connection_after_receiving_fin_packet() {
 fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -172,7 +172,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
 fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 1;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -193,7 +193,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
 fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 5;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -350,7 +350,7 @@ fn send_user_data_with_length_within_the_window_size() {
     use RustTcpMode::{Active, Passive};
 
     let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
     client.open(Active([192, 168, 1, 2], 22), "client").unwrap();
     server.open(Passive(22), "server").unwrap();
 

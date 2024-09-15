@@ -54,7 +54,6 @@ impl<'a> RustTcp<'a> {
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {
             src_ip,
-            default_window_size: 10,
             ..Default::default()
         }
     }
