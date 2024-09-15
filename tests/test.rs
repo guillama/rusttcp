@@ -55,16 +55,16 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
 fn send_fin_packet_close_server_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn1").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
-    let resp_syn = do_server_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let response_data = send_ack(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let response_data = send_ack(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let seqnum = CLIENT_SEQNUM + 1 + (data.len() as u32);
-    let response_fin = send_fin(&mut rust_tcp, seqnum, &response_data);
+    let response_fin = send_fin(&mut server, seqnum, &response_data);
 
     // Check responses
     let (_, tcphdr, _) = extract_packet(&response_fin);
@@ -130,17 +130,16 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
 fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
-    let resp_syn = do_server_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr, _) =
-        send_ack_with_extract(&mut rust_tcp, CLIENT_SEQNUM + 300, data, ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 300, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -152,16 +151,16 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
 fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
-    let resp_syn = do_server_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -173,16 +172,16 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
 fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 1;
 
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
-    let resp_syn = do_server_handshake(&mut rust_tcp, CLIENT_SEQNUM);
+    let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut rust_tcp, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = rust_tcp.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -239,12 +238,12 @@ fn send_reset_when_receiving_ack_packet_on_closed_connection() {
 fn send_reset_when_receiving_packet_on_closed_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcp::new([192, 168, 1, 2]);
 
     // No call to open()
 
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let response_data = send_data(&mut rust_tcp, CLIENT_SEQNUM + 1, data);
+    let response_data = send_data(&mut server, CLIENT_SEQNUM + 1, data);
 
     // Check response
     let (_, tcphdr, _) = extract_packet(&response_data);
@@ -258,13 +257,13 @@ fn send_reset_when_receiving_packet_on_closed_connection() {
 
 #[test]
 fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 101;
-    let response_syn = receive_syn(&mut rust_tcp, CLIENT_SEQNUM);
+    let response_syn = receive_syn(&mut server, CLIENT_SEQNUM);
     let ack_seqnum = seqnum_from(&response_syn).wrapping_add(20000);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut rust_tcp, CLIENT_SEQNUM, &[], ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM, &[], ack_seqnum);
 
     assert_eq!(tcphdr.rst, true);
     assert_eq!(tcphdr.ack, true);
@@ -274,12 +273,12 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
 
 #[test]
 fn send_reset_when_receiving_bad_ack_during_handshake() {
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
-    let _ = receive_syn(&mut rust_tcp, CLIENT_SEQNUM + 1);
-    let reset_resp = receive_syn(&mut rust_tcp, CLIENT_SEQNUM + 1);
+    let _ = receive_syn(&mut server, CLIENT_SEQNUM + 1);
+    let reset_resp = receive_syn(&mut server, CLIENT_SEQNUM + 1);
 
     let (_, tcphdr, _) = extract_packet(&reset_resp);
     let expected_seqnum = CLIENT_SEQNUM + 1;
@@ -292,11 +291,11 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
 
 #[test]
 fn send_reset_when_receiving_bad_syn_during_handshake() {
-    let mut rust_tcp = RustTcp::new([192, 168, 1, 2]);
-    rust_tcp.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let mut server = RustTcp::new([192, 168, 1, 2]);
+    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
-    let (_, tcphdr, _) = send_ack_with_extract(&mut rust_tcp, CLIENT_SEQNUM + 1, &[], 42);
+    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, &[], 42);
     let expected_seqnum = CLIENT_SEQNUM + 1;
 
     assert_eq!(tcphdr.rst, true);
