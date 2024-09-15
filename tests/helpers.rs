@@ -73,6 +73,27 @@ pub fn build_ack_packet_to_server(payload: &[u8], seqnum: u32, ack_seqnum: u32) 
     packet
 }
 
+pub fn build_ack_packet_to_client(payload: &[u8], seqnum: u32, ack_seqnum: u32) -> Vec<u8> {
+    let mut packet: Vec<u8> = Vec::new();
+
+    PacketBuilder::ipv4(
+        [192, 168, 1, 2], // source
+        [192, 168, 1, 1], // destination
+        64,               // ttl
+    )
+    .tcp(
+        22,     // source
+        36000,  //destination
+        seqnum, //seq
+        10,     // window size)
+    )
+    .ack(ack_seqnum)
+    .write(&mut packet, payload)
+    .unwrap();
+
+    packet
+}
+
 pub fn seqnum_from(response: &[u8]) -> u32 {
     let (_, tcphdr, _) = extract_packet(&response);
     tcphdr.sequence_number

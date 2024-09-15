@@ -348,6 +348,25 @@ fn send_ack_packet_after_receiving_syn_ack_packet() {
 }
 
 #[test]
+fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
+    let mut client = RustTcp::new([192, 168, 1, 1]).sequence_number(100);
+    client
+        .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
+        .unwrap();
+
+    let _ = process_user_event(&mut client);
+    let ack_packet = build_ack_packet_to_client(&[], 300, 100);
+
+    let (_, tcphdr, payload) = on_packet_event_with_extract(&mut client, &ack_packet);
+
+    assert_eq!(tcphdr.rst, true);
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.acknowledgment_number, seqnum_from(&ack_packet));
+    assert_eq!(tcphdr.syn, false);
+    assert_eq!(payload, &[]);
+}
+
+#[test]
 fn send_user_data_with_length_within_the_window_size() {
     let mut client = RustTcp::new([192, 168, 1, 1]);
     let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);

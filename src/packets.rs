@@ -90,7 +90,7 @@ impl TcpTlb {
                 self.state = TcpState::SynReceived;
             }
             TcpState::SynSent => {
-                if !tcphdr.ack {
+                if !tcphdr.ack || !tcphdr.syn {
                     return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
