@@ -481,3 +481,26 @@ fn send_several_user_data_with_length_bigger_than_the_window_size() {
     assert_eq!(next_data_size5, 0);
     assert_eq!(payload5, &[17, 18]);
 }
+
+#[test]
+fn server_window_size_is_updated_after_receiving_data() {
+    const WINDOW_SIZE: u16 = 10;
+
+    let mut client = RustTcp::new([192, 168, 1, 1]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+
+    // 3-way handshake
+    let _ = do_handshake(&mut client, &mut server);
+
+    // Send client data
+    let data = &[1, 2, 3, 4, 5, 6];
+    client.write("client", data).unwrap();
+    let client_data = process_user_event(&mut client);
+
+    let mut response = Vec::new();
+    server.on_packet(&client_data, &mut response).unwrap();
+    let (_, tcphdr, _) = extract_packet(&response);
+
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.window_size, WINDOW_SIZE - data.len() as u16);
+}

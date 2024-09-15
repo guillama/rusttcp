@@ -125,6 +125,7 @@ impl TcpTlb {
                 if self.check_seqnum_range(seqnum_min, seqnum_max).is_ok() {
                     self.recv.next = self.recv.next.wrapping_add(payload_len);
                     self.recv_buf.extend(payload.iter());
+                    self.recv.window_size -= payload_len as u16;
                 }
 
                 self.build_ack_packet(&[], response)?;
