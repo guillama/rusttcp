@@ -41,7 +41,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     let acknum = seqnum_from(&response_syn) + 1;
     let seqnum = CLIENT_SEQNUM + 1;
     let resp_ack = send_ack_to(&mut server, seqnum, &[], acknum);
-    let (_, tcphdr, payload) = send_ack_with_extract(&mut server, seqnum, &[1, 2, 3], acknum);
+    let (_, tcphdr, payload) = send_ack_with_extract_to(&mut server, seqnum, &[1, 2, 3], acknum);
 
     assert_eq!(resp_ack, &[]);
     assert_eq!(payload, []);
@@ -108,8 +108,10 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr1, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
-    let (_, tcphdr2, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let (_, tcphdr1, _) =
+        send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let (_, tcphdr2, _) =
+        send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let read_size: usize = server.read("conn2", &mut recv_buf).unwrap();
@@ -136,7 +138,8 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 300, data, ack_seqnum);
+    let (_, tcphdr, _) =
+        send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 300, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
@@ -157,7 +160,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
@@ -178,7 +181,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
     let ack_seqnum = seqnum_from(&resp_syn);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
@@ -204,7 +207,7 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let seqnum = CLIENT_SEQNUM.wrapping_add(data1.len() as u32 + 1);
     let data2 = &[0x1, 0x2, 0x3];
     let ack_seqnum = seqnum_from(&response_data);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, seqnum, data2, ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, seqnum, data2, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
     let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
@@ -224,7 +227,7 @@ fn send_reset_when_receiving_ack_packet_on_closed_connection() {
     // No call to open()
 
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, data, 300);
+    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, 300);
 
     let expected_seqnum = CLIENT_SEQNUM + 1 + data.len() as u32;
 
@@ -262,7 +265,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
     const CLIENT_SEQNUM: u32 = 101;
     let response_syn = receive_syn(&mut server, CLIENT_SEQNUM);
     let ack_seqnum = seqnum_from(&response_syn).wrapping_add(20000);
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM, &[], ack_seqnum);
+    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM, &[], ack_seqnum);
 
     assert_eq!(tcphdr.rst, true);
     assert_eq!(tcphdr.ack, true);
@@ -294,7 +297,7 @@ fn send_reset_when_receiving_bad_syn_during_handshake() {
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
-    let (_, tcphdr, _) = send_ack_with_extract(&mut server, CLIENT_SEQNUM + 1, &[], 42);
+    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, &[], 42);
     let expected_seqnum = CLIENT_SEQNUM + 1;
 
     assert_eq!(tcphdr.rst, true);
@@ -332,9 +335,9 @@ fn send_ack_packet_after_receiving_syn_ack_packet() {
     server.open(RustTcpMode::Passive(22), "server").unwrap();
 
     let syn_request = process_user_event(&mut client);
-    let syn_ack_resp = request_packet_event(&mut server, &syn_request);
+    let syn_ack_resp = on_packet_event(&mut server, &syn_request);
 
-    let (_, tcphdr, payload) = request_packet_event_with_extract(&mut client, &syn_ack_resp);
+    let (_, tcphdr, payload) = on_packet_event_with_extract(&mut client, &syn_ack_resp);
     let expected_ack = seqnum_from(&syn_ack_resp) + 1;
 
     assert_eq!(tcphdr.ack, true);

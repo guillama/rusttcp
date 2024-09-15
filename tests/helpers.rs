@@ -52,7 +52,7 @@ pub fn extract_packet(packet: &[u8]) -> (Ipv4Header, TcpHeader, &[u8]) {
     (iphdr, tcphdr, payload)
 }
 
-pub fn build_ack_packet(payload: &[u8], seqnum: u32, ack_seqnum: u32) -> Vec<u8> {
+pub fn build_ack_packet_to_server(payload: &[u8], seqnum: u32, ack_seqnum: u32) -> Vec<u8> {
     let mut packet: Vec<u8> = Vec::new();
 
     PacketBuilder::ipv4(
@@ -121,7 +121,7 @@ fn build_fin_packet(payload: &[u8], seqnum: u32, response_syn: &[u8]) -> Vec<u8>
 
 pub fn send_ack_to(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8], ack_seqnum: u32) -> Vec<u8> {
     let mut response_data: Vec<u8> = Vec::new();
-    let data_packet = build_ack_packet(data, seqnum, ack_seqnum);
+    let data_packet = build_ack_packet_to_server(data, seqnum, ack_seqnum);
     rust_tcp
         .on_packet(&data_packet, &mut response_data)
         .unwrap();
@@ -129,13 +129,13 @@ pub fn send_ack_to(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8], ack_seqnum:
     response_data
 }
 
-pub fn send_ack_with_extract(
+pub fn send_ack_with_extract_to(
     rust_tcp: &mut RustTcp,
     seqnum: u32,
     data: &[u8],
     ack_seqnum: u32,
 ) -> (Ipv4Header, TcpHeader, Vec<u8>) {
-    let data_packet = build_ack_packet(data, seqnum, ack_seqnum);
+    let data_packet = build_ack_packet_to_server(data, seqnum, ack_seqnum);
 
     let mut response: Vec<u8> = Vec::new();
     rust_tcp.on_packet(&data_packet, &mut response).unwrap();
@@ -183,13 +183,13 @@ pub fn process_user_event(client: &mut RustTcp) -> Vec<u8> {
     data_request
 }
 
-pub fn request_packet_event(client: &mut RustTcp, packet: &[u8]) -> Vec<u8> {
+pub fn on_packet_event(client: &mut RustTcp, packet: &[u8]) -> Vec<u8> {
     let mut ack_resp: Vec<u8> = Vec::new();
     client.on_packet(packet, &mut ack_resp).unwrap();
     ack_resp
 }
 
-pub fn request_packet_event_with_extract(
+pub fn on_packet_event_with_extract(
     client: &mut RustTcp,
     packet: &[u8],
 ) -> (Ipv4Header, TcpHeader, Vec<u8>) {
