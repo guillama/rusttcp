@@ -55,7 +55,6 @@ impl TcpTlb {
             send: TcpSendContext {
                 isa,
                 next: isa + 1,
-                window_size,
                 ..Default::default()
             },
             ..Default::default()
@@ -101,6 +100,8 @@ impl TcpTlb {
 
                 self.recv.isa = tcphdr.sequence_number;
                 self.recv.next = self.recv.isa + 1;
+                self.send.window_size = tcphdr.window_size;
+
                 self.build_ack_packet(&[], response)?;
                 self.state = TcpState::Established;
             }
@@ -113,6 +114,7 @@ impl TcpTlb {
                     self.send_reset_packet(tcphdr, payload.len(), response)?;
                 }
 
+                self.send.window_size = tcphdr.window_size;
                 self.state = TcpState::Established;
             }
             TcpState::Established => {
@@ -156,7 +158,7 @@ impl TcpTlb {
                 self.connection.src_port,
                 self.connection.dest_port,
                 seqnum,
-                self.send.window_size,
+                self.recv.window_size,
             )
             .rst()
             .ack(tcphdr.sequence_number + payload_len as u32)
@@ -179,7 +181,7 @@ impl TcpTlb {
                 server_port,
                 client_port,
                 self.send.isa,
-                self.send.window_size,
+                self.recv.window_size,
             )
             .syn()
             .ack(self.recv.next)
@@ -196,14 +198,17 @@ impl TcpTlb {
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
         let client_port = self.connection.dest_port;
-        let send_size = cmp::min(data.len(), self.recv.window_size as usize);
+
+        // Check the sending window size, which correspond to the maximum data the receiver can receive.
+        // 'send_size' can't be more than this window size.
+        let send_size = cmp::min(data.len(), self.send.window_size as usize);
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
             .tcp(
                 client_port,
                 server_port,
                 self.send.next,
-                self.send.window_size,
+                self.recv.window_size,
             )
             .ack(self.recv.next)
             .write(request, &data[..send_size])?;
@@ -264,7 +269,7 @@ impl TcpTlb {
                 client_port,
                 server_port,
                 self.send.isa,
-                self.send.window_size,
+                self.recv.window_size,
             )
             .syn()
             .write(request, &[])?;
@@ -296,7 +301,7 @@ impl TcpTlb {
                 self.connection.src_port,
                 self.connection.dest_port,
                 self.send.isa,
-                self.send.window_size,
+                self.recv.window_size,
             )
             .ack(self.recv.next)
             .fin()
