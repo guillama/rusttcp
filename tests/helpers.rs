@@ -21,7 +21,7 @@ fn build_syn_packet(seqnum: u32) -> Vec<u8> {
         35000,  // source
         22,     //destination
         seqnum, //seq
-        10,     // windows size)
+        10,     // window size)
     )
     .syn()
     .write(&mut packet, &[])
@@ -64,7 +64,7 @@ pub fn build_ack_packet(payload: &[u8], seqnum: u32, ack_seqnum: u32) -> Vec<u8>
         35000,  // source
         22,     //destination
         seqnum, //seq
-        10,     // windows size)
+        10,     // window size)
     )
     .ack(ack_seqnum)
     .write(&mut packet, payload)
@@ -78,9 +78,9 @@ pub fn seqnum_from(response: &[u8]) -> u32 {
     tcphdr.sequence_number
 }
 
-pub fn do_server_handshake(rust_tcp: &mut RustTcp, seqnum: u32) -> Vec<u8> {
-    let response_syn = receive_syn(rust_tcp, seqnum);
-    let _ = send_ack(rust_tcp, seqnum + 1, &[], seqnum_from(&response_syn));
+pub fn do_server_handshake(server: &mut RustTcp, seqnum: u32) -> Vec<u8> {
+    let response_syn = receive_syn(server, seqnum);
+    let _ = send_ack_to(server, seqnum + 1, &[], seqnum_from(&response_syn));
 
     // return response_sync because no response_ack is expected
     // after sending a ack without data
@@ -109,7 +109,7 @@ fn build_fin_packet(payload: &[u8], seqnum: u32, response_syn: &[u8]) -> Vec<u8>
         35000,  // source
         22,     //destination
         seqnum, //seq
-        10,     // windows size)
+        10,     // window size)
     )
     .ack(tcphdr.sequence_number + 1)
     .fin()
@@ -119,7 +119,7 @@ fn build_fin_packet(payload: &[u8], seqnum: u32, response_syn: &[u8]) -> Vec<u8>
     packet
 }
 
-pub fn send_ack(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8], ack_seqnum: u32) -> Vec<u8> {
+pub fn send_ack_to(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8], ack_seqnum: u32) -> Vec<u8> {
     let mut response_data: Vec<u8> = Vec::new();
     let data_packet = build_ack_packet(data, seqnum, ack_seqnum);
     rust_tcp
@@ -144,14 +144,17 @@ pub fn send_ack_with_extract(
     (iphdr, tcphdr, payload.to_vec())
 }
 
-pub fn send_data(rust_tcp: &mut RustTcp, seqnum: u32, data: &[u8]) -> Vec<u8> {
-    let mut response_data: Vec<u8> = Vec::new();
+pub fn send_data_to(
+    rust_tcp: &mut RustTcp,
+    data: &[u8],
+    seqnum: u32,
+) -> (Ipv4Header, TcpHeader, Vec<u8>) {
+    let mut response: Vec<u8> = Vec::new();
     let data_packet = build_packet(data, seqnum);
-    rust_tcp
-        .on_packet(&data_packet, &mut response_data)
-        .unwrap();
+    rust_tcp.on_packet(&data_packet, &mut response).unwrap();
 
-    response_data
+    let (iphdr, tcphdr, payload) = extract_packet(&response);
+    (iphdr, tcphdr, payload.to_vec())
 }
 
 fn build_packet(payload: &[u8], seqnum: u32) -> Vec<u8> {
@@ -166,7 +169,7 @@ fn build_packet(payload: &[u8], seqnum: u32) -> Vec<u8> {
         35000,  // source
         22,     // destination
         seqnum, // seq
-        10,     // windows size)
+        10,     // window size)
     )
     .write(&mut packet, payload)
     .unwrap();
@@ -200,6 +203,10 @@ pub fn request_packet_event_with_extract(
 pub fn do_handshake(client: &mut RustTcp, server: &mut RustTcp) -> u32 {
     let mut syn_request: Vec<u8> = Vec::new();
     let mut syn_ack_resp: Vec<u8> = Vec::new();
+    client
+        .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
+        .unwrap();
+    server.open(RustTcpMode::Passive(22), "server").unwrap();
 
     client.on_user_event(&mut syn_request).unwrap();
     server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
