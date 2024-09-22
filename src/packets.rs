@@ -222,7 +222,7 @@ impl TcpTlb {
     }
 
     fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {
-        let upper_bound: u64 = self.recv.next as u64 + self.recv.window_size as u64 - 1;
+        let upper_bound: u64 = self.recv.next as u64 + self.recv.window_size as u64;
         let next: u64 = self.recv.next as u64;
 
         if min < next || min > upper_bound {

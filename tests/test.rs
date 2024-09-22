@@ -440,7 +440,7 @@ fn send_several_user_data_within_the_window_size() {
     let _ = do_handshake(&mut client, &mut server);
 
     // Send data
-    let data1 = &[1, 2, 3, 4];
+    let data1 = &[1, 2, 3, 4, 5];
     client.write("client", data1).unwrap();
 
     let data2 = &[5, 6, 7];
@@ -457,12 +457,14 @@ fn send_several_user_data_within_the_window_size() {
     assert_eq!(next_data_size1, 0);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, data1);
-    assert_eq!(tcphdr1.sequence_number, 21);
+    assert_eq!(tcphdr1.sequence_number, CLIENT_SEQNUM + 1);
 
     assert_eq!(next_data_size2, 0);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, data2);
-    assert_eq!(tcphdr2.sequence_number, 25);
+
+    let expected_seqnum = CLIENT_SEQNUM + 1 + data1.len() as u32;
+    assert_eq!(tcphdr2.sequence_number, expected_seqnum);
 }
 
 #[test]
@@ -516,6 +518,29 @@ fn server_window_size_is_updated_after_receiving_data() {
 
     // Send client data
     let data = &[1, 2, 3, 4, 5, 6];
+    client.write("client", data).unwrap();
+    let client_data = process_user_event(&mut client);
+
+    let mut response = Vec::new();
+    server.on_packet(&client_data, &mut response).unwrap();
+    let (_, tcphdr, _) = extract_packet(&response);
+
+    assert_eq!(tcphdr.ack, true);
+    assert_eq!(tcphdr.window_size, WINDOW_SIZE - data.len() as u16);
+}
+
+#[test]
+fn server_window_size_is_updated_after_receiving_data_length_equal_to_window_size() {
+    const WINDOW_SIZE: u16 = 5;
+
+    let mut client = RustTcp::new([192, 168, 1, 1]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+
+    // 3-way handshake
+    let _ = do_handshake(&mut client, &mut server);
+
+    // Send client data
+    let data = &[1, 2, 3, 4, 5];
     client.write("client", data).unwrap();
     let client_data = process_user_event(&mut client);
 
