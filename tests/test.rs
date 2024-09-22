@@ -526,3 +526,29 @@ fn server_window_size_is_updated_after_receiving_data() {
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.window_size, WINDOW_SIZE - data.len() as u16);
 }
+
+#[test]
+fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
+    const WINDOW_SIZE: u16 = 10;
+
+    let mut client = RustTcp::new([192, 168, 1, 1]);
+    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+
+    // 3-way handshake
+    let _ = do_handshake(&mut client, &mut server);
+
+    // Send data
+    let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
+    client.write("client", data).unwrap();
+
+    let client_packet = process_user_event(&mut client);
+    server.on_packet(&client_packet, &mut Vec::new()).unwrap();
+
+    let event = server.poll().unwrap();
+
+    let mut recv_buf = [0; 1504];
+    let _ = server.read("server", &mut recv_buf);
+
+    assert_eq!(event, TcpEvent::DataReceived(data.len()));
+    assert_eq!(&recv_buf[..data.len()], data);
+}

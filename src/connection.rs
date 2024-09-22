@@ -25,6 +25,12 @@ impl Connection {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum TcpEvent {
+    NoEvent,
+    DataReceived(usize),
+}
+
 #[derive(Debug)]
 pub enum RustTcpMode {
     Passive(u16),
@@ -46,6 +52,7 @@ pub struct RustTcp<'a> {
     conns: HashMap<Connection, TcpTlb>,
     conns_by_name: HashMap<&'a str, Connection>,
     listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
+    tcp_events: Vec<TcpEvent>,
     default_window_size: u16,
     default_seqnum: u32,
 }
@@ -114,6 +121,10 @@ impl<'a> RustTcp<'a> {
         Ok(0)
     }
 
+    pub fn poll(&mut self) -> Result<TcpEvent, RustTcpError> {
+        Ok(self.tcp_events.pop().unwrap_or(TcpEvent::NoEvent))
+    }
+
     pub fn on_packet<T>(&mut self, packet: &[u8], response: &mut T) -> Result<(), RustTcpError>
     where
         T: io::Write + Sized,
@@ -123,7 +134,11 @@ impl<'a> RustTcp<'a> {
         let conn = Connection::new(&iphdr, &tcphdr);
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
             let tlb = e.get_mut();
-            return tlb.on_packet(&tcphdr, payload, response);
+            if let TcpEvent::DataReceived(n) = tlb.on_packet(&tcphdr, payload, response)? {
+                self.tcp_events.push(TcpEvent::DataReceived(n));
+            }
+
+            return Ok(());
         }
 
         let entry = self.listen_ports.remove(&tcphdr.destination_port);
@@ -139,9 +154,10 @@ impl<'a> RustTcp<'a> {
 
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
-            return TcpTlb::new(0, 0)
+            TcpTlb::new(0, 0)
                 .connection(conn)
-                .on_packet(&tcphdr, payload, response);
+                .on_packet(&tcphdr, payload, response)?;
+            return Ok(());
         }
 
         Ok(())

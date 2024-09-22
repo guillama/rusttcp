@@ -4,7 +4,7 @@ use std::cmp;
 use std::collections::VecDeque;
 use std::io;
 
-use crate::connection::Connection;
+use crate::connection::{Connection, TcpEvent};
 use crate::errors::RustTcpError;
 use etherparse::{PacketBuilder, TcpHeader};
 
@@ -71,13 +71,15 @@ impl TcpTlb {
         tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut T,
-    ) -> Result<(), RustTcpError>
+    ) -> Result<TcpEvent, RustTcpError>
     where
         T: io::Write + Sized,
     {
+        let mut event: TcpEvent = TcpEvent::NoEvent;
+
         match self.state {
             TcpState::Closed => {
-                return self.send_reset_packet(tcphdr, payload.len(), response);
+                self.send_reset_packet(tcphdr, payload.len(), response)?;
             }
             TcpState::Listen => {
                 if !tcphdr.syn {
@@ -126,6 +128,8 @@ impl TcpTlb {
                     self.recv.next = self.recv.next.wrapping_add(payload_len);
                     self.recv_buf.extend(payload.iter());
                     self.recv.window_size -= payload_len as u16;
+
+                    event = TcpEvent::DataReceived(payload.len());
                 }
 
                 self.build_ack_packet(&[], response)?;
@@ -137,7 +141,7 @@ impl TcpTlb {
             _ => unimplemented!(),
         }
 
-        Ok(())
+        Ok(event)
     }
 
     fn send_reset_packet<T>(
@@ -145,7 +149,7 @@ impl TcpTlb {
         tcphdr: &TcpHeader,
         payload_len: usize,
         response: &mut T,
-    ) -> Result<(), RustTcpError>
+    ) -> Result<TcpEvent, RustTcpError>
     where
         T: io::Write + Sized,
     {
@@ -165,7 +169,7 @@ impl TcpTlb {
             .ack(tcphdr.sequence_number + payload_len as u32)
             .write(response, &[])?;
 
-        Ok(())
+        Ok(TcpEvent::NoEvent)
     }
 
     fn send_syn_ack_packet<T>(&mut self, response: &mut T) -> Result<(), RustTcpError>
