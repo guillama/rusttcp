@@ -104,7 +104,7 @@ impl TcpTlb {
                 self.recv.next = self.recv.isa + 1;
                 self.send.window_size = tcphdr.window_size;
 
-                self.build_ack_packet(&[], response)?;
+                self.build_ack_packet(&[], 0, response)?;
                 self.state = TcpState::Established;
             }
             TcpState::SynReceived => {
@@ -129,10 +129,12 @@ impl TcpTlb {
                     self.recv_buf.extend(payload.iter());
                     self.recv.window_size -= payload_len as u16;
 
-                    event = TcpEvent::DataReceived(payload.len());
+                    if tcphdr.psh || self.recv.window_size == 0 {
+                        event = TcpEvent::DataReceived(payload.len());
+                    }
                 }
 
-                self.build_ack_packet(&[], response)?;
+                self.build_ack_packet(&[], 0, response)?;
 
                 if tcphdr.fin {
                     self.state = TcpState::CloseWait;
@@ -195,7 +197,12 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn build_ack_packet<T>(&self, data: &[u8], request: &mut T) -> Result<usize, RustTcpError>
+    fn build_ack_packet<T>(
+        &self,
+        data: &[u8],
+        size: usize,
+        request: &mut T,
+    ) -> Result<(), RustTcpError>
     where
         T: io::Write + Sized,
     {
@@ -203,10 +210,6 @@ impl TcpTlb {
         let server_port = self.connection.src_port;
         let client_ip = self.connection.dest_ip;
         let client_port = self.connection.dest_port;
-
-        // Check the sending window size, which correspond to the maximum data the receiver can receive.
-        // 'send_size' can't be more than this window size.
-        let send_size = cmp::min(data.len(), self.send.window_size as usize);
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
             .tcp(
@@ -216,9 +219,37 @@ impl TcpTlb {
                 self.recv.window_size,
             )
             .ack(self.recv.next)
-            .write(request, &data[..send_size])?;
+            .write(request, &data[..size])?;
 
-        Ok(send_size)
+        Ok(())
+    }
+
+    fn build_push_ack_packet<T>(
+        &self,
+        data: &[u8],
+        size: usize,
+        request: &mut T,
+    ) -> Result<(), RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
+        let server_ip = self.connection.src_ip;
+        let server_port = self.connection.src_port;
+        let client_ip = self.connection.dest_ip;
+        let client_port = self.connection.dest_port;
+
+        PacketBuilder::ipv4(client_ip, server_ip, 64)
+            .tcp(
+                client_port,
+                server_port,
+                self.send.next,
+                self.recv.window_size,
+            )
+            .ack(self.recv.next)
+            .psh()
+            .write(request, &data[..size])?;
+
+        Ok(())
     }
 
     fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {
@@ -315,9 +346,13 @@ impl TcpTlb {
         Ok(())
     }
 
-    pub fn on_read(&self, buf: &mut [u8]) -> usize {
+    pub fn on_read(&mut self, buf: &mut [u8]) -> usize {
         let n = self.recv_buf.len();
         buf[..n].clone_from_slice(&self.recv_buf);
+
+        self.recv_buf.truncate(0);
+        self.recv.window_size += n as u16;
+
         n
     }
 
@@ -336,12 +371,22 @@ impl TcpTlb {
 
         let packet: &Vec<u8> = self.send.bufs.front().unwrap();
         let index: &usize = self.send.buf_index.front().unwrap();
-        let data_size = self.build_ack_packet(&packet[*index..], request)?;
 
-        self.send.next = self.send.next.wrapping_add(data_size as u32);
+        // Check the sending window size, which correspond to the maximum data the receiver can receive.
+        // 'send_size' can't be more than this window size.
+        let send_size = cmp::min(packet[*index..].len(), self.send.window_size as usize);
+        let tot_send_size = *index + send_size;
+
+        if tot_send_size < packet.len() {
+            self.build_ack_packet(&packet[*index..], send_size, request)?;
+        } else {
+            self.build_push_ack_packet(&packet[*index..], send_size, request)?;
+        }
+
+        self.send.next = self.send.next.wrapping_add(send_size as u32);
 
         let index: &mut usize = self.send.buf_index.front_mut().unwrap();
-        *index += data_size;
+        *index = tot_send_size;
 
         let remain_size = packet.len() - *index;
         if remain_size == 0 {

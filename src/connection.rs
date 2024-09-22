@@ -105,9 +105,9 @@ impl<'a> RustTcp<'a> {
         self.queue.push_front(usr_event);
     }
 
-    pub fn read(&self, name: &str, buf: &mut [u8]) -> Result<usize, RustTcpError> {
+    pub fn read(&mut self, name: &str, buf: &mut [u8]) -> Result<usize, RustTcpError> {
         if let Some(c) = self.conns_by_name.get(name) {
-            if let Some(tlb) = self.conns.get(c) {
+            if let Some(tlb) = self.conns.get_mut(c) {
                 return Ok(tlb.on_read(buf));
             }
         }
