@@ -71,12 +71,18 @@ pub struct RustTcp<'a> {
     default_window_size: u16,
     default_seqnum: u32,
     timer: Rc<RefCell<Timer>>,
+    tcp_retries: u32,
+    tcp_max_retries: u32,
 }
 
 impl<'a> RustTcp<'a> {
+    const TCP_RETRIES_DEFAULT: Duration = Duration::from_millis(200);
+    const TCP_RETRIES_NB_DEFAULT: u32 = 15;
+
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {
             src_ip,
+            tcp_max_retries: RustTcp::TCP_RETRIES_NB_DEFAULT,
             ..Default::default()
         }
     }
@@ -93,6 +99,11 @@ impl<'a> RustTcp<'a> {
 
     pub fn sequence_number(mut self, value: u32) -> Self {
         self.default_seqnum = value;
+        self
+    }
+
+    pub fn tcp_retries(mut self, value: u32) -> Self {
+        self.tcp_max_retries = value;
         self
     }
 
@@ -137,6 +148,10 @@ impl<'a> RustTcp<'a> {
     }
 
     pub fn write(&mut self, name: &'a str, buf: &'a [u8]) -> Result<usize, RustTcpError> {
+        if self.conns_by_name.get(name).is_none() {
+            return Err(RustTcpError::NameNotFound(name.into()));
+        }
+
         let usr_event = UserEvent::Write(name, buf);
         self.user_queue.push_back(usr_event);
         Ok(0)
@@ -245,14 +260,14 @@ impl<'a> RustTcp<'a> {
                 }
 
                 self.timer_queue
-                    .push_front(TimerEvent::Timeout(name, Duration::from_millis(200)));
+                    .push_front(TimerEvent::Timeout(name, RustTcp::TCP_RETRIES_DEFAULT));
             }
             Some(UserEvent::WriteNext(name)) => {
                 let tlb = self.tlb_from_connection(name)?;
                 remain_size = tlb.on_write(&[], request)?;
 
                 self.timer_queue
-                    .push_front(TimerEvent::Timeout(name, Duration::from_millis(200)));
+                    .push_front(TimerEvent::Timeout(name, RustTcp::TCP_RETRIES_DEFAULT));
 
                 if remain_size > 0 {
                     self.user_queue.push_front(UserEvent::WriteNext(name));
@@ -282,17 +297,27 @@ impl<'a> RustTcp<'a> {
 
         match event {
             Some(TimerEvent::Timeout(name, duration)) => {
+                if self.timer.borrow().expired() >= duration
+                    && self.tcp_retries == self.tcp_max_retries
+                {
+                    let c = self.conns_by_name.get(name).unwrap();
+                    self.conns.remove(&c);
+                    self.conns_by_name.remove(name);
+
+                    return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
+                }
+
                 if self.timer.borrow().expired() >= duration {
                     let send_size = self.tlb_from_connection(name)?.on_timeout(request)?;
-
                     let new_event = TimerEvent::Timeout(name, 2 * duration);
                     self.timer.borrow_mut().reset();
                     self.timer_queue.push_front(new_event);
+                    self.tcp_retries += 1;
 
                     return Ok(send_size);
-                } else {
-                    self.timer_queue.push_front(event.unwrap());
                 }
+
+                self.timer_queue.push_front(event.unwrap());
             }
             _ => return Err(RustTcpError::ElementNotFound),
         }

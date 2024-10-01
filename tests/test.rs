@@ -648,7 +648,9 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     const WINDOW_SIZE: u16 = 10;
 
     let fake_timer = Rc::new(RefCell::new(Timer::now()));
-    let mut client: RustTcp = RustTcp::new([192, 168, 1, 1]).timer(fake_timer.clone());
+    let mut client: RustTcp = RustTcp::new([192, 168, 1, 1])
+        .timer(fake_timer.clone())
+        .tcp_retries(5);
     let mut server: RustTcp = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
 
     // 3-way handshake
@@ -689,6 +691,12 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     fake_timer.borrow_mut().add_millisecs(1); // timeout +3200ms
     let client_packet_retransmitted5 = process_timeout_event(&mut client);
 
+    fake_timer.borrow_mut().add_millisecs(6400); // timeout +6400ms
+    let client_packet_retransmitted6 = process_timeout_event(&mut client);
+
+    // Check that the connection has been removed
+    client.write("client", data).unwrap_err();
+
     assert_eq!(client_packet1.len(), 45);
     assert_eq!(client_packet_not_retransmitted.len(), 0);
     assert_eq!(client_packet_retransmitted1.len(), 45);
@@ -705,4 +713,5 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     assert_eq!(client_packet_retransmitted2, client_packet_retransmitted3);
     assert_eq!(client_packet_retransmitted3, client_packet_retransmitted4);
     assert_eq!(client_packet_retransmitted4, client_packet_retransmitted5);
+    assert_eq!(client_packet_retransmitted6, Vec::new());
 }

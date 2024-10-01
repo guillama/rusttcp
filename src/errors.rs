@@ -16,6 +16,7 @@ pub enum RustTcpError {
     BadTcpHeader,
     BadTcpState,
     UnexpectedSeqNum,
+    MaxRetransmissionsReached(u32),
 }
 
 impl fmt::Display for RustTcpError {
@@ -42,6 +43,9 @@ impl fmt::Display for RustTcpError {
             }
             RustTcpError::UnexpectedSeqNum => {
                 write!(f, "Error: Unexpected Sequence Number")
+            }
+            RustTcpError::MaxRetransmissionsReached(value) => {
+                write!(f, "Error: Max retransmissions reached : {}", value)
             }
         }
     }
