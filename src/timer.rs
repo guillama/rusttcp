@@ -13,6 +13,10 @@ impl Timer {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.sys_time = SystemTime::now();
+    }
+
     pub fn expired(&self) -> Duration {
         self.sys_time.elapsed().unwrap()
     }

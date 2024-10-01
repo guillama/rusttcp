@@ -251,6 +251,6 @@ pub fn process_user_event_with_extract(
 
 pub fn process_timeout_event(client: &mut RustTcp) -> Vec<u8> {
     let mut data_request: Vec<u8> = Vec::new();
-    let _ = client.on_timer_event(&mut data_request).unwrap();
+    let _ = client.on_timer_event(&mut data_request);
     data_request
 }

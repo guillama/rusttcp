@@ -644,7 +644,7 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
 }
 
 #[test]
-fn client_retransmits_data_after_failing_to_receive_an_ack_from_server() {
+fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmissions() {
     const WINDOW_SIZE: u16 = 10;
 
     let fake_timer = Rc::new(RefCell::new(Timer::now()));
@@ -655,23 +655,54 @@ fn client_retransmits_data_after_failing_to_receive_an_ack_from_server() {
     let _ = do_handshake(&mut client, &mut server);
 
     // Send data
-    let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let data = &[1, 2, 3, 4, 5];
     client.write("client", data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
-    let send_size_after_timeout1 = client.on_timer_event(&mut Vec::new()).unwrap();
+    fake_timer.borrow_mut().add_millisecs(199);
+    let client_packet_not_retransmitted = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(100);
-    let send_size_after_timeout2 = client.on_timer_event(&mut Vec::new()).unwrap();
+    fake_timer.borrow_mut().add_millisecs(1); // timeout +200ms
+    let client_packet_retransmitted1 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(100);
-    let mut client_packet2 = Vec::new();
-    let send_size_after_timeout3 = client.on_timer_event(&mut client_packet2).unwrap();
+    fake_timer.borrow_mut().add_millisecs(399);
+    let client_packet_not_retransmitted1 = process_timeout_event(&mut client);
 
-    client.on_timer_event(&mut Vec::new()).unwrap_err();
+    fake_timer.borrow_mut().add_millisecs(1); // timeout +400ms
+    let client_packet_retransmitted2 = process_timeout_event(&mut client);
 
-    assert_eq!(send_size_after_timeout1, 0);
-    assert_eq!(send_size_after_timeout2, 0);
-    assert_eq!(send_size_after_timeout3, 10);
-    assert_eq!(client_packet1, client_packet2);
+    fake_timer.borrow_mut().add_millisecs(799);
+    let client_packet_not_retransmitted2 = process_timeout_event(&mut client);
+
+    fake_timer.borrow_mut().add_millisecs(1); // timeout +800ms
+    let client_packet_retransmitted3 = process_timeout_event(&mut client);
+
+    fake_timer.borrow_mut().add_millisecs(1599);
+    let client_packet_not_retransmitted3 = process_timeout_event(&mut client);
+
+    fake_timer.borrow_mut().add_millisecs(1); // timeout +1600ms
+    let client_packet_retransmitted4 = process_timeout_event(&mut client);
+
+    fake_timer.borrow_mut().add_millisecs(3199);
+    let client_packet_not_retransmitted4 = process_timeout_event(&mut client);
+
+    fake_timer.borrow_mut().add_millisecs(1); // timeout +3200ms
+    let client_packet_retransmitted5 = process_timeout_event(&mut client);
+
+    assert_eq!(client_packet1.len(), 45);
+    assert_eq!(client_packet_not_retransmitted.len(), 0);
+    assert_eq!(client_packet_retransmitted1.len(), 45);
+    assert_eq!(client_packet_not_retransmitted1.len(), 0);
+    assert_eq!(client_packet_retransmitted2.len(), 45);
+    assert_eq!(client_packet_not_retransmitted2.len(), 0);
+    assert_eq!(client_packet_retransmitted3.len(), 45);
+    assert_eq!(client_packet_not_retransmitted3.len(), 0);
+    assert_eq!(client_packet_retransmitted4.len(), 45);
+    assert_eq!(client_packet_not_retransmitted4.len(), 0);
+    assert_eq!(client_packet_retransmitted5.len(), 45);
+    assert_eq!(client_packet1, client_packet_retransmitted1);
+    assert_eq!(client_packet_retransmitted1, client_packet_retransmitted2);
+    assert_eq!(client_packet_retransmitted2, client_packet_retransmitted3);
+    assert_eq!(client_packet_retransmitted3, client_packet_retransmitted4);
+    assert_eq!(client_packet_retransmitted4, client_packet_retransmitted5);
 }

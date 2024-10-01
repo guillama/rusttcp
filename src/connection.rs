@@ -56,7 +56,7 @@ pub enum UserEvent<'a> {
 
 #[derive(Debug)]
 pub enum TimerEvent<'a> {
-    Timeout(&'a str),
+    Timeout(&'a str, Duration),
 }
 
 #[derive(Default, Debug)]
@@ -244,13 +244,15 @@ impl<'a> RustTcp<'a> {
                     self.user_queue.push_front(UserEvent::WriteNext(name));
                 }
 
-                self.timer_queue.push_front(TimerEvent::Timeout(name));
+                self.timer_queue
+                    .push_front(TimerEvent::Timeout(name, Duration::from_millis(200)));
             }
             Some(UserEvent::WriteNext(name)) => {
                 let tlb = self.tlb_from_connection(name)?;
                 remain_size = tlb.on_write(&[], request)?;
 
-                self.timer_queue.push_front(TimerEvent::Timeout(name));
+                self.timer_queue
+                    .push_front(TimerEvent::Timeout(name, Duration::from_millis(200)));
 
                 if remain_size > 0 {
                     self.user_queue.push_front(UserEvent::WriteNext(name));
@@ -276,14 +278,20 @@ impl<'a> RustTcp<'a> {
     where
         W: io::Write + Sized,
     {
-        match self.timer_queue.front() {
-            Some(TimerEvent::Timeout(name)) => {
-                if self.timer.borrow_mut().expired() >= Duration::from_millis(200) {
-                    let tlb = self.tlb_from_connection(name)?;
-                    let send_size = tlb.on_timeout(request)?;
-                    self.timer_queue.pop_front();
+        let event = self.timer_queue.pop_front();
+
+        match event {
+            Some(TimerEvent::Timeout(name, duration)) => {
+                if self.timer.borrow().expired() >= duration {
+                    let send_size = self.tlb_from_connection(name)?.on_timeout(request)?;
+
+                    let new_event = TimerEvent::Timeout(name, 2 * duration);
+                    self.timer.borrow_mut().reset();
+                    self.timer_queue.push_front(new_event);
 
                     return Ok(send_size);
+                } else {
+                    self.timer_queue.push_front(event.unwrap());
                 }
             }
             _ => return Err(RustTcpError::ElementNotFound),

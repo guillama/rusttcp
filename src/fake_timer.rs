@@ -17,6 +17,10 @@ impl Timer {
         self.millisecs += value;
     }
 
+    pub fn reset(&mut self) {
+        self.millisecs = 0;
+    }
+
     pub fn expired(&self) -> Duration {
         Duration::from_millis(self.millisecs - self.init)
     }
