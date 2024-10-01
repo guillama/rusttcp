@@ -6,3 +6,13 @@ edition = "2021"
 [dependencies]
 tun = "0.6.1"
 etherparse = "0.15"
+
+[features]
+mocks = []
+
+[dev-dependencies]
+rusttcp = { path = ".", features = ["mocks"] }
+
+[[test]]
+name = "integration_tests"
+path = "tests/test.rs"

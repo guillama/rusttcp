@@ -1,9 +1,18 @@
 use crate::errors::RustTcpError;
 use crate::packets::TcpTlb;
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
+
+#[cfg(feature = "mocks")]
+use crate::fake_timer::Timer;
+#[cfg(not(feature = "mocks"))]
+use crate::timer::Timer;
+
 use std::{
+    cell::RefCell,
     collections::{hash_map::Entry, HashMap, VecDeque},
     io,
+    rc::Rc,
+    time::Duration,
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Default, Debug)]
@@ -45,9 +54,15 @@ pub enum UserEvent<'a> {
     WriteNext(&'a str),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
+pub enum TimerEvent<'a> {
+    Timeout(&'a str),
+}
+
+#[derive(Default, Debug)]
 pub struct RustTcp<'a> {
-    queue: VecDeque<UserEvent<'a>>,
+    user_queue: VecDeque<UserEvent<'a>>,
+    timer_queue: VecDeque<TimerEvent<'a>>,
     src_ip: [u8; 4],
     conns: HashMap<Connection, TcpTlb>,
     conns_by_name: HashMap<&'a str, Connection>,
@@ -55,6 +70,7 @@ pub struct RustTcp<'a> {
     tcp_events: Vec<TcpEvent>,
     default_window_size: u16,
     default_seqnum: u32,
+    timer: Rc<RefCell<Timer>>,
 }
 
 impl<'a> RustTcp<'a> {
@@ -63,6 +79,11 @@ impl<'a> RustTcp<'a> {
             src_ip,
             ..Default::default()
         }
+    }
+
+    pub fn timer(mut self, time: Rc<RefCell<Timer>>) -> Self {
+        self.timer = time;
+        self
     }
 
     pub fn window_size(mut self, value: u16) -> Self {
@@ -93,7 +114,7 @@ impl<'a> RustTcp<'a> {
                 self.conns_by_name.insert(name, c);
 
                 let usr_event = UserEvent::Open(name);
-                self.queue.push_front(usr_event);
+                self.user_queue.push_front(usr_event);
             }
         }
 
@@ -102,7 +123,7 @@ impl<'a> RustTcp<'a> {
 
     pub fn close(&mut self, name: &'a str) {
         let usr_event = UserEvent::Close(name);
-        self.queue.push_front(usr_event);
+        self.user_queue.push_front(usr_event);
     }
 
     pub fn read(&mut self, name: &str, buf: &mut [u8]) -> Result<usize, RustTcpError> {
@@ -117,7 +138,7 @@ impl<'a> RustTcp<'a> {
 
     pub fn write(&mut self, name: &'a str, buf: &'a [u8]) -> Result<usize, RustTcpError> {
         let usr_event = UserEvent::Write(name, buf);
-        self.queue.push_back(usr_event);
+        self.user_queue.push_back(usr_event);
         Ok(0)
     }
 
@@ -204,7 +225,7 @@ impl<'a> RustTcp<'a> {
         T: io::Write + Sized,
     {
         let mut remain_size = 0;
-        let event: Option<UserEvent> = self.queue.pop_front();
+        let event: Option<UserEvent> = self.user_queue.pop_front();
 
         match event {
             Some(UserEvent::Open(name)) => {
@@ -220,15 +241,19 @@ impl<'a> RustTcp<'a> {
                 remain_size = tlb.on_write(user_buf, request)?;
 
                 if remain_size > 0 {
-                    self.queue.push_front(UserEvent::WriteNext(name));
+                    self.user_queue.push_front(UserEvent::WriteNext(name));
                 }
+
+                self.timer_queue.push_front(TimerEvent::Timeout(name));
             }
             Some(UserEvent::WriteNext(name)) => {
                 let tlb = self.tlb_from_connection(name)?;
                 remain_size = tlb.on_write(&[], request)?;
 
+                self.timer_queue.push_front(TimerEvent::Timeout(name));
+
                 if remain_size > 0 {
-                    self.queue.push_front(UserEvent::WriteNext(name));
+                    self.user_queue.push_front(UserEvent::WriteNext(name));
                 }
             }
             None => return Err(RustTcpError::ElementNotFound),
@@ -245,5 +270,25 @@ impl<'a> RustTcp<'a> {
         }
 
         Err(RustTcpError::NameNotFound(name.into()))
+    }
+
+    pub fn on_timer_event<W>(&mut self, request: &mut W) -> Result<usize, RustTcpError>
+    where
+        W: io::Write + Sized,
+    {
+        match self.timer_queue.front() {
+            Some(TimerEvent::Timeout(name)) => {
+                if self.timer.borrow_mut().expired() >= Duration::from_millis(200) {
+                    let tlb = self.tlb_from_connection(name)?;
+                    let send_size = tlb.on_timeout(request)?;
+                    self.timer_queue.pop_front();
+
+                    return Ok(send_size);
+                }
+            }
+            _ => return Err(RustTcpError::ElementNotFound),
+        }
+
+        Ok(0)
     }
 }

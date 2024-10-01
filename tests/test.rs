@@ -4,7 +4,10 @@ mod helpers;
 
 use etherparse::{Ipv4Header, TcpHeader};
 use helpers::*;
-use rusttcp::connection::*;
+use rusttcp::connection::{RustTcp, RustTcpMode, TcpEvent};
+use rusttcp::fake_timer::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::u32::MAX;
 
 #[test]
@@ -620,10 +623,10 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
     // Send data
     let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
     client.write("client", data).unwrap();
-
     let client_packet1 = process_user_event(&mut client);
-    let mut sever_ack = Vec::new();
-    server.on_packet(&client_packet1, &mut sever_ack).unwrap();
+
+    let mut server_ack = Vec::new();
+    server.on_packet(&client_packet1, &mut server_ack).unwrap();
     let _ = server.poll().unwrap();
 
     let mut recv_buf = [0; 1504];
@@ -638,4 +641,37 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
     assert_eq!(event2, TcpEvent::DataReceived(data.len() - read_size1));
     assert_eq!(read_size2, data.len() - read_size1);
     assert_eq!(&recv_buf[..data.len()], data);
+}
+
+#[test]
+fn client_retransmits_data_after_failing_to_receive_an_ack_from_server() {
+    const WINDOW_SIZE: u16 = 10;
+
+    let fake_timer = Rc::new(RefCell::new(Timer::now()));
+    let mut client: RustTcp = RustTcp::new([192, 168, 1, 1]).timer(fake_timer.clone());
+    let mut server: RustTcp = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+
+    // 3-way handshake
+    let _ = do_handshake(&mut client, &mut server);
+
+    // Send data
+    let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    client.write("client", data).unwrap();
+    let client_packet1 = process_user_event(&mut client);
+
+    let send_size_after_timeout1 = client.on_timer_event(&mut Vec::new()).unwrap();
+
+    fake_timer.borrow_mut().add_millisecs(100);
+    let send_size_after_timeout2 = client.on_timer_event(&mut Vec::new()).unwrap();
+
+    fake_timer.borrow_mut().add_millisecs(100);
+    let mut client_packet2 = Vec::new();
+    let send_size_after_timeout3 = client.on_timer_event(&mut client_packet2).unwrap();
+
+    client.on_timer_event(&mut Vec::new()).unwrap_err();
+
+    assert_eq!(send_size_after_timeout1, 0);
+    assert_eq!(send_size_after_timeout2, 0);
+    assert_eq!(send_size_after_timeout3, 10);
+    assert_eq!(client_packet1, client_packet2);
 }

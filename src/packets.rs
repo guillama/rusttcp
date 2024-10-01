@@ -1,7 +1,6 @@
 extern crate etherparse;
 
 use std::cmp;
-use std::collections::VecDeque;
 use std::io;
 
 use crate::connection::{Connection, TcpEvent};
@@ -31,9 +30,10 @@ struct TcpRecvContext {
 struct TcpSendContext {
     isa: u32,
     next: u32,
+    acked: u32,
     window_size: u16,
-    bufs: VecDeque<Vec<u8>>,
-    buf_index: VecDeque<usize>,
+    buf: Vec<u8>,
+    packets_index: Vec<usize>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -55,6 +55,7 @@ impl TcpTlb {
             send: TcpSendContext {
                 isa,
                 next: isa + 1,
+                acked: isa + 1,
                 ..Default::default()
             },
             ..Default::default()
@@ -104,7 +105,7 @@ impl TcpTlb {
                 self.recv.next = self.recv.isa + 1;
                 self.send.window_size = tcphdr.window_size;
 
-                self.build_ack_packet(&[], 0, response)?;
+                self.build_ack_packet(&[], self.send.next, response)?;
                 self.state = TcpState::Established;
             }
             TcpState::SynReceived => {
@@ -134,7 +135,11 @@ impl TcpTlb {
                     }
                 }
 
-                self.build_ack_packet(&[], 0, response)?;
+                if tcphdr.acknowledgment_number >= self.send.next {
+                    self.send.acked = tcphdr.acknowledgment_number;
+                }
+
+                self.build_ack_packet(&[], self.send.next, response)?;
 
                 if tcphdr.fin {
                     self.state = TcpState::CloseWait;
@@ -200,7 +205,7 @@ impl TcpTlb {
     fn build_ack_packet<T>(
         &self,
         data: &[u8],
-        size: usize,
+        seqnum: u32,
         request: &mut T,
     ) -> Result<(), RustTcpError>
     where
@@ -212,14 +217,9 @@ impl TcpTlb {
         let client_port = self.connection.dest_port;
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(
-                client_port,
-                server_port,
-                self.send.next,
-                self.recv.window_size,
-            )
+            .tcp(client_port, server_port, seqnum, self.recv.window_size)
             .ack(self.recv.next)
-            .write(request, &data[..size])?;
+            .write(request, data)?;
 
         Ok(())
     }
@@ -227,7 +227,7 @@ impl TcpTlb {
     fn build_push_ack_packet<T>(
         &self,
         data: &[u8],
-        size: usize,
+        seqnum: u32,
         request: &mut T,
     ) -> Result<(), RustTcpError>
     where
@@ -239,15 +239,10 @@ impl TcpTlb {
         let client_port = self.connection.dest_port;
 
         PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(
-                client_port,
-                server_port,
-                self.send.next,
-                self.recv.window_size,
-            )
+            .tcp(client_port, server_port, seqnum, self.recv.window_size)
             .ack(self.recv.next)
             .psh()
-            .write(request, &data[..size])?;
+            .write(request, data)?;
 
         Ok(())
     }
@@ -364,34 +359,50 @@ impl TcpTlb {
             return Err(RustTcpError::BadTcpState);
         }
 
+        let curr_packet_index = (self.send.next - self.send.isa) as usize - 1;
+
         if !buf.is_empty() {
-            self.send.bufs.push_back(buf.to_vec());
-            self.send.buf_index.push_back(0);
+            self.send.buf.extend_from_slice(buf);
+            self.send.packets_index.push(curr_packet_index + buf.len());
         }
 
-        let packet: &Vec<u8> = self.send.bufs.front().unwrap();
-        let index: &usize = self.send.buf_index.front().unwrap();
+        let mut remain_size = self.send.packets_index.last().unwrap() - curr_packet_index;
 
-        // Check the sending window size, which correspond to the maximum data the receiver can receive.
-        // 'send_size' can't be more than this window size.
-        let send_size = cmp::min(packet[*index..].len(), self.send.window_size as usize);
-        let tot_send_size = *index + send_size;
+        // Check the maximum data the receiver can receive. 'send_size' can't be more than the sending window size.
+        let send_size = cmp::min(remain_size, self.send.window_size as usize);
+        let last_packet_index = curr_packet_index + send_size;
+        let packet = &self.send.buf[curr_packet_index..last_packet_index];
+        let last_buf_index = self.send.buf[curr_packet_index..].len();
 
-        if tot_send_size < packet.len() {
-            self.build_ack_packet(&packet[*index..], send_size, request)?;
+        if last_packet_index < last_buf_index {
+            self.build_ack_packet(packet, self.send.next, request)?;
         } else {
-            self.build_push_ack_packet(&packet[*index..], send_size, request)?;
+            self.build_push_ack_packet(packet, self.send.next, request)?;
         }
 
         self.send.next = self.send.next.wrapping_add(send_size as u32);
+        remain_size -= send_size;
 
-        let index: &mut usize = self.send.buf_index.front_mut().unwrap();
-        *index = tot_send_size;
+        //todo!("pop last index if remain size is esual to 0");
+        Ok(remain_size)
+    }
 
-        let remain_size = packet.len() - *index;
-        if remain_size == 0 {
-            self.send.bufs.pop_front();
-            self.send.buf_index.pop_front();
+    pub fn on_timeout<T>(&mut self, request: &mut T) -> Result<usize, RustTcpError>
+    where
+        T: io::Write + Sized,
+    {
+        let curr_packet_index = (self.send.acked - self.send.isa) as usize - 1;
+        let remain_size = self.send.packets_index.last().unwrap() - curr_packet_index;
+
+        // Check the maximum data the receiver can receive. 'send_size' can't be more than the sending window size.
+        let send_size = cmp::min(remain_size, self.send.window_size as usize);
+        let last_packet_index = curr_packet_index + send_size;
+        let packet = &self.send.buf[curr_packet_index..last_packet_index];
+
+        if (remain_size - send_size) > 0 {
+            self.build_ack_packet(packet, self.send.acked, request)?;
+        } else {
+            self.build_push_ack_packet(packet, self.send.acked, request)?;
         }
 
         Ok(remain_size)
