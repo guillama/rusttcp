@@ -94,6 +94,7 @@ name = "rusttcp"
 version = "0.1.0"
 dependencies = [
  "etherparse",
+ "rusttcp",
  "tun",
 ]
 
