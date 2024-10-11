@@ -54,7 +54,7 @@ pub enum UserEvent<'a> {
     WriteNext(&'a str),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TimerEvent<'a> {
     Timeout(&'a str, Duration),
 }
@@ -293,35 +293,34 @@ impl<'a> RustTcp<'a> {
     where
         W: io::Write + Sized,
     {
-        let event = self.timer_queue.pop_front();
+        let (name, duration) =
+            if let Some(TimerEvent::Timeout(n, duration)) = self.timer_queue.front() {
+                (*n, *duration)
+            } else {
+                return Err(RustTcpError::ElementNotFound);
+            };
 
-        match event {
-            Some(TimerEvent::Timeout(name, duration)) => {
-                if self.timer.borrow().expired() >= duration
-                    && self.tcp_retries == self.tcp_max_retries
-                {
-                    let c = self.conns_by_name.get(name).unwrap();
-                    self.conns.remove(&c);
-                    self.conns_by_name.remove(name);
-
-                    return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
-                }
-
-                if self.timer.borrow().expired() >= duration {
-                    let send_size = self.tlb_from_connection(name)?.on_timeout(request)?;
-                    let new_event = TimerEvent::Timeout(name, 2 * duration);
-                    self.timer.borrow_mut().reset();
-                    self.timer_queue.push_front(new_event);
-                    self.tcp_retries += 1;
-
-                    return Ok(send_size);
-                }
-
-                self.timer_queue.push_front(event.unwrap());
-            }
-            _ => return Err(RustTcpError::ElementNotFound),
+        if self.timer.borrow().expired() < duration {
+            return Ok(0);
         }
 
-        Ok(0)
+        self.timer_queue.pop_front();
+
+        if self.tcp_retries == self.tcp_max_retries {
+            if let Some(c) = self.conns_by_name.remove(&name) {
+                self.conns.remove(&c);
+            }
+
+            return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
+        }
+
+        let send_size = self.tlb_from_connection(name)?.on_timeout(request)?;
+        let new_event = TimerEvent::Timeout(name, duration * 2);
+
+        self.timer_queue.push_front(new_event);
+        self.timer.borrow_mut().reset();
+        self.tcp_retries += 1;
+
+        return Ok(send_size);
     }
 }
