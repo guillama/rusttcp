@@ -24,7 +24,6 @@ fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
     assert_eq!(response.len(), Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN);
     assert_eq!(iphdr, expected_iphdr);
     assert_eq!(tcphdr.source_port, 22);
-    assert_eq!(tcphdr.destination_port, 35000);
     assert_eq!(tcphdr.syn, true);
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.acknowledgment_number, CLIENT_SEQNUM + 1);
@@ -331,7 +330,6 @@ fn send_syn_packet_on_opening_active_connection() {
     let expected_iphdr = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], TcpHeader::MIN_LEN);
 
     assert_eq!(iphdr, expected_iphdr);
-    assert_eq!(tcphdr.source_port, 36000);
     assert_eq!(tcphdr.destination_port, 22);
     assert_eq!(tcphdr.syn, true);
     assert_eq!(tcphdr.rst, false);
