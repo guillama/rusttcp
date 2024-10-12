@@ -62,11 +62,12 @@ pub enum TimerEvent<'a> {
 pub struct RustTcp<'a> {
     user_queue: VecDeque<UserEvent<'a>>,
     timer_queue: VecDeque<TimerEvent<'a>>,
+    poll_queue: VecDeque<TcpEvent>,
+
     src_ip: [u8; 4],
     conns: HashMap<Connection, TcpTlb>,
     conns_by_name: HashMap<&'a str, Connection>,
     listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
-    tcp_events: Vec<TcpEvent>,
 
     default_window_size: u16,
     default_seqnum: u32,
@@ -158,7 +159,7 @@ impl<'a> RustTcp<'a> {
     }
 
     pub fn poll(&mut self) -> Result<TcpEvent, RustTcpError> {
-        Ok(self.tcp_events.pop().unwrap_or(TcpEvent::NoEvent))
+        Ok(self.poll_queue.pop_back().unwrap_or(TcpEvent::NoEvent))
     }
 
     pub fn on_packet<T>(&mut self, packet: &[u8], response: &mut T) -> Result<(), RustTcpError>
@@ -171,7 +172,7 @@ impl<'a> RustTcp<'a> {
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
             let tlb = e.get_mut();
             if let TcpEvent::DataReceived(n) = tlb.on_packet(&tcphdr, payload, response)? {
-                self.tcp_events.push(TcpEvent::DataReceived(n));
+                self.poll_queue.push_front(TcpEvent::DataReceived(n));
             }
 
             return Ok(());
