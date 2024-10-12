@@ -8,6 +8,7 @@ use crate::fake_timer::Timer;
 use crate::timer::Timer;
 
 use std::{
+    cell::Cell,
     collections::{hash_map::Entry, HashMap, VecDeque},
     io,
     sync::{Arc, Mutex},
@@ -47,28 +48,28 @@ pub enum RustTcpMode {
 
 #[derive(Debug)]
 pub enum UserEvent<'a> {
-    Close(&'a str),
-    Open(&'a str),
-    Write(&'a str, &'a [u8]),
-    WriteNext(&'a str),
+    Close(i32),
+    Open(i32),
+    Write(i32, &'a [u8]),
+    WriteNext(i32),
 }
 
 #[derive(Debug, Clone)]
-pub enum TimerEvent<'a> {
-    Timeout(&'a str, Duration),
+pub enum TimerEvent {
+    Timeout(i32, Duration),
 }
 
 #[derive(Default, Debug)]
 pub struct RustTcp<'a> {
     user_queue: VecDeque<UserEvent<'a>>,
-    timer_queue: VecDeque<TimerEvent<'a>>,
+    timer_queue: VecDeque<TimerEvent>,
     poll_queue: VecDeque<TcpEvent>,
 
-    src_ip: [u8; 4],
     conns: HashMap<Connection, TcpTlb>,
-    conns_by_name: HashMap<&'a str, Connection>,
-    listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
+    conns_by_fd: HashMap<i32, Connection>,
+    listen_ports: HashMap<u16, (i32, TcpTlb)>,
 
+    src_ip: [u8; 4],
     timer: Arc<Mutex<Timer>>,
     default_window_size: u16,
     default_seqnum: u32,
@@ -138,12 +139,22 @@ impl<'a> RustTcp<'a> {
         }
     }
 
-    pub fn open(&mut self, mode: RustTcpMode, name: &'a str) -> Result<(), RustTcpError> {
+    pub fn open(&mut self, mode: RustTcpMode) -> Result<i32, RustTcpError> {
         let tlb = TcpTlb::new(self.default_window_size, self.default_seqnum);
+
+        thread_local! {
+            static FD: Cell<i32> = Cell::new(0);
+        }
+
+        let fd = FD.with(|cell| {
+            let fd = cell.get();
+            cell.set(fd + 1);
+            fd
+        });
 
         match mode {
             RustTcpMode::Passive(src_port) => {
-                self.listen_ports.insert(src_port, (name, tlb.listen()?));
+                self.listen_ports.insert(src_port, (fd, tlb.listen()?));
             }
             RustTcpMode::Active(server_ip, server_port) => {
                 let c = Connection {
@@ -153,37 +164,37 @@ impl<'a> RustTcp<'a> {
                     dest_port: 36000,
                 };
                 self.conns.insert(c, tlb.connection(c));
-                self.conns_by_name.insert(name, c);
+                self.conns_by_fd.insert(fd, c);
 
-                let usr_event = UserEvent::Open(name);
+                let usr_event = UserEvent::Open(fd);
                 self.user_queue.push_front(usr_event);
             }
         }
 
-        Ok(())
+        Ok(fd)
     }
 
-    pub fn close(&mut self, name: &'a str) {
-        let usr_event = UserEvent::Close(name);
+    pub fn close(&mut self, fd: i32) {
+        let usr_event = UserEvent::Close(fd);
         self.user_queue.push_front(usr_event);
     }
 
-    pub fn read(&mut self, name: &str, buf: &mut [u8]) -> Result<usize, RustTcpError> {
-        if let Some(c) = self.conns_by_name.get(name) {
+    pub fn read(&mut self, fd: i32, buf: &mut [u8]) -> Result<usize, RustTcpError> {
+        if let Some(c) = self.conns_by_fd.get(&fd) {
             if let Some(tlb) = self.conns.get_mut(c) {
                 return Ok(tlb.on_read(buf));
             }
         }
 
-        Err(RustTcpError::NameNotFound(name.to_string()))
+        Err(RustTcpError::FileDescriptorNotFound(fd))
     }
 
-    pub fn write(&mut self, name: &'a str, buf: &'a [u8]) -> Result<usize, RustTcpError> {
-        if self.conns_by_name.get(name).is_none() {
-            return Err(RustTcpError::NameNotFound(name.into()));
+    pub fn write(&mut self, fd: i32, buf: &'a [u8]) -> Result<usize, RustTcpError> {
+        if self.conns_by_fd.get(&fd).is_none() {
+            return Err(RustTcpError::FileDescriptorNotFound(fd));
         }
 
-        let usr_event = UserEvent::Write(name, buf);
+        let usr_event = UserEvent::Write(fd, buf);
         self.user_queue.push_back(usr_event);
         Ok(0)
     }
@@ -214,7 +225,7 @@ impl<'a> RustTcp<'a> {
             new_tlb.on_packet(&tcphdr, payload, response)?;
 
             self.conns.insert(conn, new_tlb);
-            self.conns_by_name.insert(conn_name, conn);
+            self.conns_by_fd.insert(conn_name, conn);
 
             return Ok(());
         }
@@ -274,34 +285,34 @@ impl<'a> RustTcp<'a> {
         let event: Option<UserEvent> = self.user_queue.pop_front();
 
         match event {
-            Some(UserEvent::Open(name)) => {
-                let tlb = self.tlb_from_connection(name)?;
+            Some(UserEvent::Open(fd)) => {
+                let tlb = self.tlb_from_connection(fd)?;
                 tlb.send_syn(request)?;
             }
-            Some(UserEvent::Close(name)) => {
-                let tlb = self.tlb_from_connection(name)?;
+            Some(UserEvent::Close(fd)) => {
+                let tlb = self.tlb_from_connection(fd)?;
                 tlb.on_close(request)?;
             }
-            Some(UserEvent::Write(name, user_buf)) => {
-                let tlb = self.tlb_from_connection(name)?;
+            Some(UserEvent::Write(fd, user_buf)) => {
+                let tlb = self.tlb_from_connection(fd)?;
                 remain_size = tlb.on_write(user_buf, request)?;
 
                 if remain_size > 0 {
-                    self.user_queue.push_front(UserEvent::WriteNext(name));
+                    self.user_queue.push_front(UserEvent::WriteNext(fd));
                 }
 
                 self.timer_queue
-                    .push_front(TimerEvent::Timeout(name, RustTcp::TCP_RETRIES_DEFAULT));
+                    .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
             }
-            Some(UserEvent::WriteNext(name)) => {
-                let tlb = self.tlb_from_connection(name)?;
+            Some(UserEvent::WriteNext(fd)) => {
+                let tlb = self.tlb_from_connection(fd)?;
                 remain_size = tlb.on_write(&[], request)?;
 
                 self.timer_queue
-                    .push_front(TimerEvent::Timeout(name, RustTcp::TCP_RETRIES_DEFAULT));
+                    .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
 
                 if remain_size > 0 {
-                    self.user_queue.push_front(UserEvent::WriteNext(name));
+                    self.user_queue.push_front(UserEvent::WriteNext(fd));
                 }
             }
             None => return Err(RustTcpError::ElementNotFound),
@@ -310,21 +321,21 @@ impl<'a> RustTcp<'a> {
         Ok(remain_size)
     }
 
-    fn tlb_from_connection(&mut self, name: &'a str) -> Result<&mut TcpTlb, RustTcpError> {
-        if let Some(c) = self.conns_by_name.get_mut(&name) {
+    fn tlb_from_connection(&mut self, fd: i32) -> Result<&mut TcpTlb, RustTcpError> {
+        if let Some(c) = self.conns_by_fd.get_mut(&fd) {
             if let Some(tlb) = self.conns.get_mut(c) {
                 return Ok(tlb);
             }
         }
 
-        Err(RustTcpError::NameNotFound(name.into()))
+        Err(RustTcpError::FileDescriptorNotFound(fd))
     }
 
     pub fn on_timer_event<W>(&mut self, request: &mut W) -> Result<usize, RustTcpError>
     where
         W: io::Write + Sized,
     {
-        let (name, duration) =
+        let (fd, duration) =
             if let Some(TimerEvent::Timeout(n, duration)) = self.timer_queue.front() {
                 (*n, *duration)
             } else {
@@ -338,15 +349,15 @@ impl<'a> RustTcp<'a> {
         self.timer_queue.pop_front();
 
         if self.tcp_retries == self.tcp_max_retries {
-            if let Some(c) = self.conns_by_name.remove(&name) {
+            if let Some(c) = self.conns_by_fd.remove(&fd) {
                 self.conns.remove(&c);
             }
 
             return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
         }
 
-        let send_size = self.tlb_from_connection(name)?.on_timeout(request)?;
-        let new_event = TimerEvent::Timeout(name, duration * 2);
+        let send_size = self.tlb_from_connection(fd)?.on_timeout(request)?;
+        let new_event = TimerEvent::Timeout(fd, duration * 2);
 
         self.timer_queue.push_front(new_event);
         self.timer.lock().unwrap().reset();

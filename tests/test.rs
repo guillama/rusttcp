@@ -12,7 +12,7 @@ use std::u32::MAX;
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    server.open(RustTcpMode::Passive(22), "conn1").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let response = receive_syn(&mut server, CLIENT_SEQNUM);
@@ -35,7 +35,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
         .window_size(10)
         .build();
-    server.open(RustTcpMode::Passive(22), "conn1").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     // Send SYN packet
     const CLIENT_SEQNUM: u32 = 100;
@@ -62,7 +62,7 @@ fn send_fin_packet_close_server_connection() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
         .window_size(10)
         .build();
-    server.open(RustTcpMode::Passive(22), "conn1").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -86,7 +86,7 @@ fn close_server_connection_after_receiving_fin_packet() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
         .window_size(10)
         .build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
 
@@ -97,7 +97,7 @@ fn close_server_connection_after_receiving_fin_packet() {
     let seqnum = CLIENT_SEQNUM + 1 + (data.len() as u32);
     let _ = send_fin(&mut server, seqnum, &response_data);
 
-    server.close("conn2");
+    server.close(fd);
 
     let (_, tcphdr, _, _) = process_user_event_with_extract(&mut server);
 
@@ -113,7 +113,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
         .window_size(10)
         .build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -124,7 +124,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
         send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let read_size: usize = server.read("conn2", &mut recv_buf).unwrap();
+    let read_size: usize = server.read(fd, &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr1.rst, false);
     assert_eq!(tcphdr1.ack, true);
@@ -143,7 +143,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
     const CLIENT_SEQNUM: u32 = 100;
 
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -152,7 +152,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
         send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 300, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read(fd, &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -165,7 +165,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
@@ -173,7 +173,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read(fd, &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -188,7 +188,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
         .window_size(10)
         .build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
@@ -196,7 +196,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read(fd, &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -211,7 +211,7 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
         .window_size(10)
         .build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data1 = &[0x1, 0x2, 0x3, 0x4, 0x5];
@@ -224,7 +224,7 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, seqnum, data2, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
-    let nbytes_read: usize = server.read("conn2", &mut recv_buf).unwrap();
+    let nbytes_read: usize = server.read(fd, &mut recv_buf).unwrap();
 
     assert_eq!(tcphdr.rst, false);
     assert_eq!(tcphdr.ack, true);
@@ -274,7 +274,7 @@ fn send_reset_when_receiving_packet_on_closed_connection() {
 #[test]
 fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 101;
     let response_syn = receive_syn(&mut server, CLIENT_SEQNUM);
@@ -290,7 +290,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
 #[test]
 fn send_reset_when_receiving_bad_ack_during_handshake() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let _ = receive_syn(&mut server, CLIENT_SEQNUM + 1);
@@ -308,7 +308,7 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
 #[test]
 fn send_reset_when_receiving_bad_syn_during_handshake() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    server.open(RustTcpMode::Passive(22), "conn2").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, &[], 42);
@@ -323,8 +323,8 @@ fn send_reset_when_receiving_bad_syn_during_handshake() {
 #[test]
 fn send_syn_packet_on_opening_active_connection() {
     let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    client
-        .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
+    let _ = client
+        .open(RustTcpMode::Active([192, 168, 1, 2], 22))
         .unwrap();
 
     let (iphdr, tcphdr, payload, _) = process_user_event_with_extract(&mut client);
@@ -343,10 +343,10 @@ fn send_syn_packet_on_opening_active_connection() {
 fn send_ack_packet_after_receiving_syn_ack_packet() {
     let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
-    client
-        .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
+    let _ = client
+        .open(RustTcpMode::Active([192, 168, 1, 2], 22))
         .unwrap();
-    server.open(RustTcpMode::Passive(22), "server").unwrap();
+    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let syn_request = process_user_event(&mut client);
     let syn_ack_resp = on_packet_event(&mut server, &syn_request);
@@ -366,8 +366,8 @@ fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
     let mut client = RustTcpBuilder::new([192, 168, 1, 1])
         .sequence_number(100)
         .build();
-    client
-        .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
+    let _ = client
+        .open(RustTcpMode::Active([192, 168, 1, 2], 22))
         .unwrap();
 
     let _ = process_user_event(&mut client);
@@ -390,11 +390,11 @@ fn send_user_data_with_length_within_the_window_size() {
         .build();
 
     // 3-way handshake
-    let expected_acknum = do_handshake(&mut client, &mut server);
+    let (fd_client, _, expected_acknum) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data = &[1, 2, 3, 4, 5, 6];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
 
     let (iphdr, tcphdr, payload, _) = process_user_event_with_extract(&mut client);
     let payload_len = TcpHeader::MIN_LEN + data.len();
@@ -421,11 +421,11 @@ fn send_user_data_with_length_bigger_than_the_window_size() {
         .build();
 
     // 3-way handshake
-    let expected_acknum = do_handshake(&mut client, &mut server);
+    let (fd_client, _, expected_acknum) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data = &[1, 2, 3, 4, 5, 6, 7, 8];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
 
     let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
     let payload_len1 = TcpHeader::MIN_LEN + WINDOW_SIZE as usize;
@@ -463,14 +463,14 @@ fn send_several_user_data_within_the_window_size() {
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, _, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data1 = &[1, 2, 3, 4, 5];
-    client.write("client", data1).unwrap();
+    client.write(fd_client, data1).unwrap();
 
     let data2 = &[5, 6, 7];
-    client.write("client", data2).unwrap();
+    client.write(fd_client, data2).unwrap();
 
     let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
     let payload_len1 = TcpHeader::MIN_LEN + data1.len();
@@ -503,14 +503,14 @@ fn send_several_user_data_with_length_bigger_than_the_window_size() {
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, _, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data1 = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-    client.write("client", data1).unwrap();
+    client.write(fd_client, data1).unwrap();
 
     let data2 = &[12, 13, 14, 15, 16, 17, 18];
-    client.write("client", data2).unwrap();
+    client.write(fd_client, data2).unwrap();
 
     let (_, _, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
     let (_, _, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
@@ -544,11 +544,11 @@ fn server_window_size_is_updated_after_receiving_data() {
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, _, _) = open_and_handshake(&mut client, &mut server);
 
     // Send client data
     let data = &[1, 2, 3, 4, 5, 6];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
     let client_data = process_user_event(&mut client);
 
     let mut response = Vec::new();
@@ -569,11 +569,11 @@ fn server_window_size_is_updated_after_receiving_data_length_equal_to_window_siz
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, _, _) = open_and_handshake(&mut client, &mut server);
 
     // Send client data
     let data = &[1, 2, 3, 4, 5];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
     let client_data = process_user_event(&mut client);
 
     let mut response = Vec::new();
@@ -594,11 +594,11 @@ fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, fd_server, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
 
     let client_packet = process_user_event(&mut client);
     server.on_packet(&client_packet, &mut Vec::new()).unwrap();
@@ -606,7 +606,7 @@ fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
     let event1 = server.poll().unwrap();
 
     let mut recv_buf = [0; 1504];
-    let read_size = server.read("server", &mut recv_buf).unwrap();
+    let read_size = server.read(fd_server, &mut recv_buf).unwrap();
 
     let event2 = server.poll().unwrap();
 
@@ -626,18 +626,18 @@ fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, fd_server, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
 
     let client_packet1 = process_user_event(&mut client);
     server.on_packet(&client_packet1, &mut Vec::new()).unwrap();
     let event = server.poll().unwrap();
 
     let mut recv_buf = [0; 1504];
-    let read_size = server.read("server", &mut recv_buf).unwrap();
+    let read_size = server.read(fd_server, &mut recv_buf).unwrap();
 
     assert_eq!(event, TcpEvent::DataReceived(WINDOW_SIZE as usize));
     assert_eq!(read_size, WINDOW_SIZE as usize);
@@ -653,11 +653,11 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, fd_server, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
     let mut server_ack = Vec::new();
@@ -665,13 +665,13 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
     let _ = server.poll().unwrap();
 
     let mut recv_buf = [0; 1504];
-    let read_size1 = server.read("server", &mut recv_buf[0..]).unwrap();
+    let read_size1 = server.read(fd_server, &mut recv_buf[0..]).unwrap();
 
     let client_packet2 = process_user_event(&mut client);
     server.on_packet(&client_packet2, &mut Vec::new()).unwrap();
     let event2 = server.poll().unwrap();
 
-    let read_size2 = server.read("server", &mut recv_buf[read_size1..]).unwrap();
+    let read_size2 = server.read(fd_server, &mut recv_buf[read_size1..]).unwrap();
 
     assert_eq!(event2, TcpEvent::DataReceived(data.len() - read_size1));
     assert_eq!(read_size2, data.len() - read_size1);
@@ -692,11 +692,11 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, _, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data
     let data = &[1, 2, 3, 4, 5];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
     fake_timer.lock().unwrap().add_millisecs(199);
@@ -733,7 +733,7 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     let client_packet_retransmitted6 = process_timeout_event(&mut client);
 
     // Check that the connection has been removed
-    client.write("client", data).unwrap_err();
+    client.write(fd_client, data).unwrap_err();
 
     assert_eq!(client_packet1.len(), 45);
     assert_eq!(client_packet_not_retransmitted.len(), 0);
@@ -768,11 +768,11 @@ fn client_resets_its_timer_after_receiving_a_response() {
         .build();
 
     // 3-way handshake
-    let _ = do_handshake(&mut client, &mut server);
+    let (fd_client, _, _) = open_and_handshake(&mut client, &mut server);
 
     // Send data bigger than the sending window size
     let data = &[1, 2, 3, 4, 5, 6, 7, 8];
-    client.write("client", data).unwrap();
+    client.write(fd_client, data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
     fake_timer.lock().unwrap().add_millisecs(200);

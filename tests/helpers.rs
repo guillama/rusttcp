@@ -221,22 +221,24 @@ pub fn on_packet_event_with_extract(
     (iphdr, tcphdr, payload.to_vec())
 }
 
-pub fn do_handshake(client: &mut RustTcp, server: &mut RustTcp) -> u32 {
+pub fn open_and_handshake(client: &mut RustTcp, server: &mut RustTcp) -> (i32, i32, u32) {
     let mut syn_request: Vec<u8> = Vec::new();
     let mut syn_ack_resp: Vec<u8> = Vec::new();
     let mut client_ack: Vec<u8> = Vec::new();
 
-    client
-        .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
+    let fd_client = client
+        .open(RustTcpMode::Active([192, 168, 1, 2], 22))
         .unwrap();
-    server.open(RustTcpMode::Passive(22), "server").unwrap();
+    let fd_server = server.open(RustTcpMode::Passive(22)).unwrap();
 
     client.on_user_event(&mut syn_request).unwrap();
     server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
     client.on_packet(&syn_ack_resp, &mut client_ack).unwrap();
     server.on_packet(&client_ack, &mut vec![]).unwrap();
 
-    seqnum_from(&syn_ack_resp) + 1
+    let acked_seqnum = seqnum_from(&syn_ack_resp) + 1;
+
+    (fd_client, fd_server, acked_seqnum)
 }
 
 pub fn process_user_event_with_extract(
