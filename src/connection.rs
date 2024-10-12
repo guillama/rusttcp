@@ -221,12 +221,12 @@ impl<'a> RustTcp<'a> {
         }
 
         let entry = self.listen_ports.remove(&tcphdr.destination_port);
-        if let Some((conn_name, tlb)) = entry {
+        if let Some((fd, tlb)) = entry {
             let mut new_tlb: TcpTlb = tlb.connection(conn);
             new_tlb.on_packet(&tcphdr, payload, response)?;
 
             self.conns.insert(conn, new_tlb);
-            self.conns_by_fd.insert(conn_name, conn);
+            self.conns_by_fd.insert(fd, conn);
 
             return Ok(());
         }
