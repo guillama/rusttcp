@@ -6,8 +6,7 @@ use etherparse::{Ipv4Header, TcpHeader};
 use helpers::*;
 use rusttcp::connection::{RustTcp, RustTcpMode, TcpEvent};
 use rusttcp::fake_timer::*;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::u32::MAX;
 
 #[test]
@@ -647,7 +646,7 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
 fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmissions() {
     const WINDOW_SIZE: u16 = 10;
 
-    let fake_timer = Rc::new(RefCell::new(Timer::now()));
+    let fake_timer = Arc::new(Mutex::new(Timer::now()));
     let mut client: RustTcp = RustTcp::new([192, 168, 1, 1])
         .timer(fake_timer.clone())
         .tcp_retries(5);
@@ -661,37 +660,37 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     client.write("client", data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(199);
+    fake_timer.lock().unwrap().add_millisecs(199);
     let client_packet_not_retransmitted = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(1); // timeout +200ms
+    fake_timer.lock().unwrap().add_millisecs(1); // timeout +200ms
     let client_packet_retransmitted1 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(399);
+    fake_timer.lock().unwrap().add_millisecs(399);
     let client_packet_not_retransmitted1 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(1); // timeout +400ms
+    fake_timer.lock().unwrap().add_millisecs(1); // timeout +400ms
     let client_packet_retransmitted2 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(799);
+    fake_timer.lock().unwrap().add_millisecs(799);
     let client_packet_not_retransmitted2 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(1); // timeout +800ms
+    fake_timer.lock().unwrap().add_millisecs(1); // timeout +800ms
     let client_packet_retransmitted3 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(1599);
+    fake_timer.lock().unwrap().add_millisecs(1599);
     let client_packet_not_retransmitted3 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(1); // timeout +1600ms
+    fake_timer.lock().unwrap().add_millisecs(1); // timeout +1600ms
     let client_packet_retransmitted4 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(3199);
+    fake_timer.lock().unwrap().add_millisecs(3199);
     let client_packet_not_retransmitted4 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(1); // timeout +3200ms
+    fake_timer.lock().unwrap().add_millisecs(1); // timeout +3200ms
     let client_packet_retransmitted5 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(6400); // timeout +6400ms
+    fake_timer.lock().unwrap().add_millisecs(6400); // timeout +6400ms
     let client_packet_retransmitted6 = process_timeout_event(&mut client);
 
     // Check that the connection has been removed
@@ -720,7 +719,7 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
 fn client_resets_its_timer_after_receiving_a_response() {
     const WINDOW_SIZE: u16 = 5;
 
-    let fake_timer = Rc::new(RefCell::new(Timer::now()));
+    let fake_timer = Arc::new(Mutex::new(Timer::now()));
     let mut client: RustTcp = RustTcp::new([192, 168, 1, 1])
         .timer(fake_timer.clone())
         .tcp_retries(5);
@@ -734,10 +733,10 @@ fn client_resets_its_timer_after_receiving_a_response() {
     client.write("client", data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(200);
+    fake_timer.lock().unwrap().add_millisecs(200);
     let client_packet_retransmitted1 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(400);
+    fake_timer.lock().unwrap().add_millisecs(400);
     let client_packet_retransmitted2 = process_timeout_event(&mut client);
 
     let mut server_ack = Vec::new();
@@ -746,10 +745,10 @@ fn client_resets_its_timer_after_receiving_a_response() {
 
     let client_packet2 = process_user_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(200);
+    fake_timer.lock().unwrap().add_millisecs(200);
     let client_packet_retransmitted3 = process_timeout_event(&mut client);
 
-    fake_timer.borrow_mut().add_millisecs(400);
+    fake_timer.lock().unwrap().add_millisecs(400);
     let client_packet_retransmitted4 = process_timeout_event(&mut client);
 
     assert_eq!(client_packet1.len(), 45);

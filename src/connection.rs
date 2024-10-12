@@ -8,10 +8,9 @@ use crate::fake_timer::Timer;
 use crate::timer::Timer;
 
 use std::{
-    cell::RefCell,
     collections::{hash_map::Entry, HashMap, VecDeque},
     io,
-    rc::Rc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -68,9 +67,10 @@ pub struct RustTcp<'a> {
     conns_by_name: HashMap<&'a str, Connection>,
     listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
     tcp_events: Vec<TcpEvent>,
+
     default_window_size: u16,
     default_seqnum: u32,
-    timer: Rc<RefCell<Timer>>,
+    timer: Arc<Mutex<Timer>>,
     tcp_retries: u32,
     tcp_max_retries: u32,
 }
@@ -87,7 +87,7 @@ impl<'a> RustTcp<'a> {
         }
     }
 
-    pub fn timer(mut self, time: Rc<RefCell<Timer>>) -> Self {
+    pub fn timer(mut self, time: Arc<Mutex<Timer>>) -> Self {
         self.timer = time;
         self
     }
@@ -300,7 +300,7 @@ impl<'a> RustTcp<'a> {
                 return Err(RustTcpError::ElementNotFound);
             };
 
-        if self.timer.borrow().expired() < duration {
+        if self.timer.lock().unwrap().expired() < duration {
             return Ok(0);
         }
 
@@ -318,7 +318,7 @@ impl<'a> RustTcp<'a> {
         let new_event = TimerEvent::Timeout(name, duration * 2);
 
         self.timer_queue.push_front(new_event);
-        self.timer.borrow_mut().reset();
+        self.timer.lock().unwrap().reset();
         self.tcp_retries += 1;
 
         return Ok(send_size);
