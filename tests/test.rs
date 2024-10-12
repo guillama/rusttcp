@@ -4,14 +4,14 @@ mod helpers;
 
 use etherparse::{Ipv4Header, TcpHeader};
 use helpers::*;
-use rusttcp::connection::{RustTcp, RustTcpMode, TcpEvent};
+use rusttcp::connection::{RustTcpBuilder, RustTcpMode, TcpEvent};
 use rusttcp::fake_timer::*;
 use std::sync::{Arc, Mutex};
 use std::u32::MAX;
 
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
@@ -32,7 +32,9 @@ fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
 
 #[test]
 fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     // Send SYN packet
@@ -57,7 +59,9 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
 fn send_fin_packet_close_server_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     server.open(RustTcpMode::Passive(22), "conn1").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -79,7 +83,9 @@ fn send_fin_packet_close_server_connection() {
 fn close_server_connection_after_receiving_fin_packet() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -104,7 +110,9 @@ fn close_server_connection_after_receiving_fin_packet() {
 fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -134,7 +142,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
 fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -156,7 +164,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
 fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -177,7 +185,9 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
 fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 1;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -198,7 +208,9 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
 fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 5;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -224,7 +236,7 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
 fn send_reset_when_receiving_ack_packet_on_closed_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
 
     // No call to open()
 
@@ -243,7 +255,7 @@ fn send_reset_when_receiving_ack_packet_on_closed_connection() {
 fn send_reset_when_receiving_packet_on_closed_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
 
     // No call to open()
 
@@ -261,7 +273,7 @@ fn send_reset_when_receiving_packet_on_closed_connection() {
 
 #[test]
 fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 101;
@@ -277,7 +289,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
 
 #[test]
 fn send_reset_when_receiving_bad_ack_during_handshake() {
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
@@ -295,7 +307,7 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
 
 #[test]
 fn send_reset_when_receiving_bad_syn_during_handshake() {
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     server.open(RustTcpMode::Passive(22), "conn2").unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
@@ -310,7 +322,7 @@ fn send_reset_when_receiving_bad_syn_during_handshake() {
 
 #[test]
 fn send_syn_packet_on_opening_active_connection() {
-    let mut client = RustTcp::new([192, 168, 1, 1]);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
     client
         .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
         .unwrap();
@@ -329,8 +341,8 @@ fn send_syn_packet_on_opening_active_connection() {
 
 #[test]
 fn send_ack_packet_after_receiving_syn_ack_packet() {
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
     client
         .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
         .unwrap();
@@ -351,7 +363,9 @@ fn send_ack_packet_after_receiving_syn_ack_packet() {
 
 #[test]
 fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
-    let mut client = RustTcp::new([192, 168, 1, 1]).sequence_number(100);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+        .sequence_number(100)
+        .build();
     client
         .open(RustTcpMode::Active([192, 168, 1, 2], 22), "client")
         .unwrap();
@@ -370,8 +384,10 @@ fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
 
 #[test]
 fn send_user_data_with_length_within_the_window_size() {
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(10);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
 
     // 3-way handshake
     let expected_acknum = do_handshake(&mut client, &mut server);
@@ -397,8 +413,12 @@ fn send_user_data_with_length_bigger_than_the_window_size() {
     const WINDOW_SIZE: u16 = 5;
     const CLIENT_SEQNUM: u32 = 500;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]).sequence_number(CLIENT_SEQNUM);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+        .sequence_number(CLIENT_SEQNUM)
+        .build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let expected_acknum = do_handshake(&mut client, &mut server);
@@ -435,8 +455,12 @@ fn send_several_user_data_within_the_window_size() {
     const WINDOW_SIZE: u16 = 5;
     const CLIENT_SEQNUM: u32 = 20;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]).sequence_number(CLIENT_SEQNUM);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+        .sequence_number(CLIENT_SEQNUM)
+        .build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -473,8 +497,10 @@ fn send_several_user_data_within_the_window_size() {
 fn send_several_user_data_with_length_bigger_than_the_window_size() {
     const WINDOW_SIZE: u16 = 5;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -512,8 +538,10 @@ fn send_several_user_data_with_length_bigger_than_the_window_size() {
 fn server_window_size_is_updated_after_receiving_data() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -535,8 +563,10 @@ fn server_window_size_is_updated_after_receiving_data() {
 fn server_window_size_is_updated_after_receiving_data_length_equal_to_window_size() {
     const WINDOW_SIZE: u16 = 5;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -558,8 +588,10 @@ fn server_window_size_is_updated_after_receiving_data_length_equal_to_window_siz
 fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -588,8 +620,10 @@ fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
 fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -613,8 +647,10 @@ fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
 fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_data() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcp::new([192, 168, 1, 1]);
-    let mut server = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -647,10 +683,13 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     const WINDOW_SIZE: u16 = 10;
 
     let fake_timer = Arc::new(Mutex::new(Timer::now()));
-    let mut client: RustTcp = RustTcp::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
         .timer(fake_timer.clone())
-        .tcp_retries(5);
-    let mut server: RustTcp = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+        .tcp_max_retries(5)
+        .build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);
@@ -720,10 +759,13 @@ fn client_resets_its_timer_after_receiving_a_response() {
     const WINDOW_SIZE: u16 = 5;
 
     let fake_timer = Arc::new(Mutex::new(Timer::now()));
-    let mut client: RustTcp = RustTcp::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
         .timer(fake_timer.clone())
-        .tcp_retries(5);
-    let mut server: RustTcp = RustTcp::new([192, 168, 1, 2]).window_size(WINDOW_SIZE);
+        .tcp_max_retries(5)
+        .build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(WINDOW_SIZE)
+        .build();
 
     // 3-way handshake
     let _ = do_handshake(&mut client, &mut server);

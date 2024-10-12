@@ -69,11 +69,61 @@ pub struct RustTcp<'a> {
     conns_by_name: HashMap<&'a str, Connection>,
     listen_ports: HashMap<u16, (&'a str, TcpTlb)>,
 
+    timer: Arc<Mutex<Timer>>,
     default_window_size: u16,
     default_seqnum: u32,
-    timer: Arc<Mutex<Timer>>,
     tcp_retries: u32,
     tcp_max_retries: u32,
+}
+
+#[derive(Default, Debug)]
+pub struct RustTcpBuilder {
+    src_ip: [u8; 4],
+
+    timer: Arc<Mutex<Timer>>,
+    window_size: u16,
+    sequence_number: u32,
+    tcp_max_retries: u32,
+}
+
+impl<'a> RustTcpBuilder {
+    pub fn new(src_ip: [u8; 4]) -> Self {
+        RustTcpBuilder {
+            src_ip,
+            ..Default::default()
+        }
+    }
+
+    pub fn timer(mut self, time: Arc<Mutex<Timer>>) -> Self {
+        self.timer = time;
+        self
+    }
+
+    pub fn window_size(mut self, value: u16) -> Self {
+        self.window_size = value;
+        self
+    }
+
+    pub fn sequence_number(mut self, value: u32) -> Self {
+        self.sequence_number = value;
+        self
+    }
+
+    pub fn tcp_max_retries(mut self, value: u32) -> Self {
+        self.tcp_max_retries = value;
+        self
+    }
+
+    pub fn build(self) -> RustTcp<'a> {
+        RustTcp {
+            src_ip: self.src_ip,
+            timer: self.timer,
+            default_window_size: self.window_size,
+            default_seqnum: self.sequence_number,
+            tcp_max_retries: self.tcp_max_retries,
+            ..Default::default()
+        }
+    }
 }
 
 impl<'a> RustTcp<'a> {
@@ -86,26 +136,6 @@ impl<'a> RustTcp<'a> {
             tcp_max_retries: RustTcp::TCP_RETRIES_NB_DEFAULT,
             ..Default::default()
         }
-    }
-
-    pub fn timer(mut self, time: Arc<Mutex<Timer>>) -> Self {
-        self.timer = time;
-        self
-    }
-
-    pub fn window_size(mut self, value: u16) -> Self {
-        self.default_window_size = value;
-        self
-    }
-
-    pub fn sequence_number(mut self, value: u32) -> Self {
-        self.default_seqnum = value;
-        self
-    }
-
-    pub fn tcp_retries(mut self, value: u32) -> Self {
-        self.tcp_max_retries = value;
-        self
     }
 
     pub fn open(&mut self, mode: RustTcpMode, name: &'a str) -> Result<(), RustTcpError> {
