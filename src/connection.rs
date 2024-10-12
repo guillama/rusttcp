@@ -130,6 +130,7 @@ impl<'a> RustTcpBuilder {
 impl<'a> RustTcp<'a> {
     const TCP_RETRIES_DEFAULT: Duration = Duration::from_millis(200);
     const TCP_RETRIES_NB_DEFAULT: u32 = 15;
+    const DEFAULT_AVAILABLE_PORT: u16 = 36000;
 
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {
@@ -161,7 +162,7 @@ impl<'a> RustTcp<'a> {
                     src_ip: server_ip,
                     src_port: server_port,
                     dest_ip: self.src_ip,
-                    dest_port: 36000,
+                    dest_port: RustTcp::DEFAULT_AVAILABLE_PORT,
                 };
                 self.conns.insert(c, tlb.connection(c));
                 self.conns_by_fd.insert(fd, c);
