@@ -47,10 +47,10 @@ pub enum RustTcpMode {
 }
 
 #[derive(Debug)]
-pub enum UserEvent<'a> {
+pub enum UserEvent {
     Close(i32),
     Open(i32),
-    Write(i32, &'a [u8]),
+    Write(i32, Vec<u8>),
     WriteNext(i32),
 }
 
@@ -60,8 +60,8 @@ pub enum TimerEvent {
 }
 
 #[derive(Default, Debug)]
-pub struct RustTcp<'a> {
-    user_queue: VecDeque<UserEvent<'a>>,
+pub struct RustTcp {
+    user_queue: VecDeque<UserEvent>,
     timer_queue: VecDeque<TimerEvent>,
     poll_queue: VecDeque<TcpEvent>,
 
@@ -87,7 +87,7 @@ pub struct RustTcpBuilder {
     tcp_max_retries: u32,
 }
 
-impl<'a> RustTcpBuilder {
+impl RustTcpBuilder {
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcpBuilder {
             src_ip,
@@ -115,7 +115,7 @@ impl<'a> RustTcpBuilder {
         self
     }
 
-    pub fn build(self) -> RustTcp<'a> {
+    pub fn build(self) -> RustTcp {
         RustTcp {
             src_ip: self.src_ip,
             timer: self.timer,
@@ -127,7 +127,7 @@ impl<'a> RustTcpBuilder {
     }
 }
 
-impl<'a> RustTcp<'a> {
+impl RustTcp {
     const TCP_RETRIES_DEFAULT: Duration = Duration::from_millis(200);
     const TCP_RETRIES_NB_DEFAULT: u32 = 15;
     const DEFAULT_AVAILABLE_PORT: u16 = 36000;
@@ -190,12 +190,12 @@ impl<'a> RustTcp<'a> {
         Err(RustTcpError::FileDescriptorNotFound(fd))
     }
 
-    pub fn write(&mut self, fd: i32, buf: &'a [u8]) -> Result<usize, RustTcpError> {
+    pub fn write(&mut self, fd: i32, buf: &[u8]) -> Result<usize, RustTcpError> {
         if self.conns_by_fd.get(&fd).is_none() {
             return Err(RustTcpError::FileDescriptorNotFound(fd));
         }
 
-        let usr_event = UserEvent::Write(fd, buf);
+        let usr_event = UserEvent::Write(fd, buf.to_vec());
         self.user_queue.push_back(usr_event);
         Ok(0)
     }
@@ -296,7 +296,7 @@ impl<'a> RustTcp<'a> {
             }
             Some(UserEvent::Write(fd, user_buf)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                remain_size = tlb.on_write(user_buf, request)?;
+                remain_size = tlb.on_write(&user_buf, request)?;
 
                 if remain_size > 0 {
                     self.user_queue.push_front(UserEvent::WriteNext(fd));
