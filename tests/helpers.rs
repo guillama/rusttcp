@@ -108,7 +108,7 @@ pub fn do_server_handshake(server: &mut RustTcp, seqnum: u32) -> Vec<u8> {
     response_syn
 }
 
-pub fn send_fin(rust_tcp: &mut RustTcp, seqnum: u32, last_response: &[u8]) -> Vec<u8> {
+pub fn send_fin_to(rust_tcp: &mut RustTcp, seqnum: u32, last_response: &[u8]) -> Vec<u8> {
     let mut response_fin: Vec<u8> = Vec::new();
     let fin_packet = build_fin_packet(&[], seqnum, last_response);
     rust_tcp.on_packet(&fin_packet, &mut response_fin).unwrap();

@@ -4,7 +4,7 @@ mod helpers;
 
 use etherparse::{Ipv4Header, TcpHeader};
 use helpers::*;
-use rusttcp::connection::{RustTcpBuilder, RustTcpMode, TcpEvent};
+use rusttcp::connection::*;
 use rusttcp::fake_timer::*;
 use std::sync::{Arc, Mutex};
 use std::u32::MAX;
@@ -55,7 +55,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
 }
 
 #[test]
-fn send_fin_packet_close_server_connection() {
+fn server_sends_a_ack_after_receiving_a_fin_packet() {
     const CLIENT_SEQNUM: u32 = 100;
 
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
@@ -64,22 +64,17 @@ fn send_fin_packet_close_server_connection() {
     let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
-    let data = &[1, 2, 3];
-    let ack_seqnum = seqnum_from(&resp_syn);
-    let response_data = send_ack_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
+    let response_fin = send_fin_to(&mut server, CLIENT_SEQNUM, &resp_syn);
 
-    let seqnum = CLIENT_SEQNUM + 1 + (data.len() as u32);
-    let response_fin = send_fin(&mut server, seqnum, &response_data);
-
-    // Check responses
+    // Check response
     let (_, tcphdr, _) = extract_packet(&response_fin);
 
-    assert_eq!(tcphdr.acknowledgment_number, 104);
+    assert_eq!(tcphdr.acknowledgment_number, 101);
     assert_eq!(tcphdr.ack, true);
 }
 
 #[test]
-fn close_server_connection_after_receiving_fin_packet() {
+fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_client() {
     const CLIENT_SEQNUM: u32 = 100;
 
     let mut server = RustTcpBuilder::new([192, 168, 1, 2])
@@ -88,21 +83,31 @@ fn close_server_connection_after_receiving_fin_packet() {
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
+    let fin_resp = send_fin_to(&mut server, CLIENT_SEQNUM + 1, &resp_syn);
 
-    let data = &[1, 2, 3];
-    let ack_seqnum = seqnum_from(&resp_syn);
-    let response_data = send_ack_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
-
-    let seqnum = CLIENT_SEQNUM + 1 + (data.len() as u32);
-    let _ = send_fin(&mut server, seqnum, &response_data);
-
+    let event = server.poll().unwrap();
     server.close(fd);
 
-    let (_, tcphdr, _, _) = process_user_event_with_extract(&mut server);
+    // Extract the FIN request to close the other half connection
+    let (_, tcphdr_fin, _, _) = process_user_event_with_extract(&mut server);
+    let ack_seqnum = seqnum_from(&fin_resp);
 
-    assert_eq!(tcphdr.fin, true);
-    assert_eq!(tcphdr.ack, true);
-    assert_eq!(tcphdr.acknowledgment_number, 104);
+    // Send ACK for the FIN request
+    send_ack_to(&mut server, CLIENT_SEQNUM + 1, &[], ack_seqnum);
+
+    // Send a data packet to check that the connection has been removed
+    // The server shall respond with a RESET packet
+    let ack_seqnum = seqnum_from(&resp_syn);
+    let response = send_ack_to(&mut server, CLIENT_SEQNUM + 1, &[], ack_seqnum);
+    let (_, tcphdr_reset, _) = extract_packet(&response);
+
+    assert_eq!(event, TcpEvent::ConnectionClosing);
+    assert_eq!(tcphdr_fin.fin, true);
+    assert_eq!(tcphdr_fin.ack, true);
+    assert_eq!(tcphdr_fin.acknowledgment_number, 101);
+
+    assert_eq!(tcphdr_reset.rst, true);
+    assert_eq!(tcphdr_reset.ack, true);
 }
 
 #[test]
