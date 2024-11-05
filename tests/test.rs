@@ -89,7 +89,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     server.close(fd);
 
     // Extract the FIN request to close the other half connection
-    let (_, tcphdr_fin, _, _) = process_user_event_with_extract(&mut server);
+    let (iphdr_fin, tcphdr_fin, _, _) = process_user_event_with_extract(&mut server);
     let ack_seqnum = seqnum_from(&fin_resp);
 
     // Send ACK for the FIN request
@@ -105,6 +105,11 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     assert_eq!(tcphdr_fin.fin, true);
     assert_eq!(tcphdr_fin.ack, true);
     assert_eq!(tcphdr_fin.acknowledgment_number, 101);
+    assert_eq!(tcphdr_fin.source_port, 22);
+    assert_eq!(tcphdr_fin.destination_port, 35000);
+
+    assert_eq!(iphdr_fin.source, [192, 168, 1, 2]);
+    assert_eq!(iphdr_fin.destination, [192, 168, 1, 1]);
 
     assert_eq!(tcphdr_reset.rst, true);
     assert_eq!(tcphdr_reset.ack, true);
@@ -242,10 +247,10 @@ fn send_reset_when_receiving_ack_packet_on_closed_connection() {
 
     let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
 
-    // No call to open()
+    // No call to open() -> so connection is closed
 
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, 300);
+    let (iphdr, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, 300);
 
     let expected_seqnum = CLIENT_SEQNUM + 1 + data.len() as u32;
 
@@ -253,6 +258,11 @@ fn send_reset_when_receiving_ack_packet_on_closed_connection() {
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.sequence_number, 300);
     assert_eq!(tcphdr.acknowledgment_number, expected_seqnum);
+    assert_eq!(tcphdr.source_port, 22);
+    assert_eq!(tcphdr.destination_port, 35000);
+
+    assert_eq!(iphdr.source, [192, 168, 1, 2]);
+    assert_eq!(iphdr.destination, [192, 168, 1, 1]);
 }
 
 #[test]

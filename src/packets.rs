@@ -174,8 +174,8 @@ impl TcpTlb {
 
         PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
-                self.connection.src_port,
                 self.connection.dest_port,
+                self.connection.src_port,
                 seqnum,
                 self.recv.window_size,
             )
@@ -336,8 +336,8 @@ impl TcpTlb {
     {
         PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
-                self.connection.src_port,
                 self.connection.dest_port,
+                self.connection.src_port,
                 self.send.isa,
                 self.recv.window_size,
             )
