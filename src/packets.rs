@@ -143,9 +143,16 @@ impl TcpTlb {
 
                 if tcphdr.fin {
                     self.state = TcpState::CloseWait;
+                    event = TcpEvent::ConnectionClosing;
                 }
             }
-            _ => unimplemented!(),
+            TcpState::CloseWait => {}
+            TcpState::LastAck => {
+                if tcphdr.ack && !tcphdr.fin {
+                    self.state = TcpState::Closed;
+                    event = TcpEvent::ConnectionClosed;
+                }
+            }
         }
 
         Ok(event)
@@ -383,7 +390,7 @@ impl TcpTlb {
         self.send.next = self.send.next.wrapping_add(send_size as u32);
         remain_size -= send_size;
 
-        //todo!("pop last index if remain size is esual to 0");
+        //todo!("pop last index if remain size is equal to 0");
         Ok(remain_size)
     }
 

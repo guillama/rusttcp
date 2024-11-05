@@ -38,6 +38,8 @@ impl Connection {
 pub enum TcpEvent {
     NoEvent,
     DataReceived(usize),
+    ConnectionClosing,
+    ConnectionClosed,
 }
 
 #[derive(Debug)]
@@ -215,8 +217,15 @@ impl RustTcp {
         let conn = Connection::new(&iphdr, &tcphdr);
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
             let tlb = e.get_mut();
-            if let TcpEvent::DataReceived(n) = tlb.on_packet(&tcphdr, payload, response)? {
-                self.poll_queue.push_front(TcpEvent::DataReceived(n));
+            let event = tlb.on_packet(&tcphdr, payload, response)?;
+
+            match event {
+                TcpEvent::ConnectionClosed => {
+                    println!("REMOVE CONN");
+                    self.conns.remove(&conn);
+                }
+                TcpEvent::NoEvent => (),
+                _ => self.poll_queue.push_front(event),
             }
 
             return Ok(());
@@ -295,6 +304,7 @@ impl RustTcp {
             Some(UserEvent::Close(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
                 tlb.on_close(request)?;
+                self.conns_by_fd.remove(&fd);
             }
             Some(UserEvent::Write(fd, user_buf)) => {
                 let tlb = self.tlb_from_connection(fd)?;
