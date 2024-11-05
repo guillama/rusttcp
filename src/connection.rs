@@ -187,12 +187,12 @@ impl RustTcp {
             }
         }
 
-        Err(RustTcpError::FileDescriptorNotFound(fd))
+        Err(RustTcpError::ConnectionNotFound(fd))
     }
 
     pub fn write(&mut self, fd: i32, buf: &[u8]) -> Result<usize, RustTcpError> {
         if self.conns_by_fd.get(&fd).is_none() {
-            return Err(RustTcpError::FileDescriptorNotFound(fd));
+            return Err(RustTcpError::ConnectionNotFound(fd));
         }
 
         let usr_event = UserEvent::Write(fd, buf.to_vec());
@@ -329,7 +329,7 @@ impl RustTcp {
             }
         }
 
-        Err(RustTcpError::FileDescriptorNotFound(fd))
+        Err(RustTcpError::ConnectionNotFound(fd))
     }
 
     pub fn on_timer_event<W>(&mut self, request: &mut W) -> Result<usize, RustTcpError>

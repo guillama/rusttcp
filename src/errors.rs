@@ -7,7 +7,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum RustTcpError {
     PacketBuild(BuildWriteError),
-    FileDescriptorNotFound(i32),
+    ConnectionNotFound(i32),
     ElementNotFound,
     BadPacketSize(usize),
     BadIpv4Address([u8; 4]),
@@ -23,8 +23,12 @@ impl fmt::Display for RustTcpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RustTcpError::PacketBuild(e) => write!(f, "Error: Can't build packet : {}", e),
-            RustTcpError::FileDescriptorNotFound(fd) => {
-                write!(f, "Error: Can't find element with file descriptor : {}", fd)
+            RustTcpError::ConnectionNotFound(fd) => {
+                write!(
+                    f,
+                    "Error: Can't find connection with file descriptor : {}",
+                    fd
+                )
             }
             RustTcpError::ElementNotFound => write!(f, "Error: Can't find element"),
             RustTcpError::BadPacketSize(size) => write!(f, "Error: Bad Packet size : {}", size),
