@@ -829,3 +829,20 @@ fn client_resets_its_timer_after_receiving_a_response() {
     assert_eq!(client_packet2, client_packet_retransmitted3);
     assert_eq!(client_packet2, client_packet_retransmitted4);
 }
+
+#[test]
+fn server_closes_connection_after_receiving_a_reset_from_client() {
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let _ = server.open(RustTcpMode::Passive(22));
+
+    // 3-way handshake
+    let _ = do_server_handshake(&mut server, 100);
+
+    // Send reset
+    let reset_packet = build_reset_packet();
+    server.on_packet(&reset_packet, &mut Vec::new()).unwrap();
+
+    let event = server.poll().unwrap();
+
+    assert_eq!(event, TcpEvent::ConnectionClosed);
+}

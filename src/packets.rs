@@ -125,6 +125,11 @@ impl TcpTlb {
                 let seqnum_min: u64 = tcphdr.sequence_number as u64;
                 let seqnum_max: u64 = tcphdr.sequence_number as u64 + payload_len as u64;
 
+                if tcphdr.rst {
+                    self.state = TcpState::Closed;
+                    return Ok(TcpEvent::ConnectionClosed);
+                }
+
                 if self.check_seqnum_range(seqnum_min, seqnum_max).is_ok() {
                     self.recv.next = self.recv.next.wrapping_add(payload_len);
                     self.recv_buf.extend(payload.iter());

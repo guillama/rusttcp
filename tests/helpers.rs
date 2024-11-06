@@ -103,7 +103,7 @@ pub fn do_server_handshake(server: &mut RustTcp, seqnum: u32) -> Vec<u8> {
     let response_syn = receive_syn(server, seqnum);
     let _ = send_ack_to(server, seqnum + 1, &[], seqnum_from(&response_syn));
 
-    // return response_sync because no response_ack is expected
+    // return response_syn because no response_ack is expected
     // after sending a ack without data
     response_syn
 }
@@ -255,4 +255,25 @@ pub fn process_timeout_event(client: &mut RustTcp) -> Vec<u8> {
     let mut data_request: Vec<u8> = Vec::new();
     let _ = client.on_timer_event(&mut data_request);
     data_request
+}
+
+pub fn build_reset_packet() -> Vec<u8> {
+    let mut packet: Vec<u8> = Vec::new();
+
+    PacketBuilder::ipv4(
+        [192, 168, 1, 1], // source
+        [192, 168, 1, 2], // destination
+        64,               // ttl
+    )
+    .tcp(
+        35000, // source
+        22,    //destination
+        0,     //seq
+        10,    // window size)
+    )
+    .rst()
+    .write(&mut packet, &[])
+    .unwrap();
+
+    packet
 }
