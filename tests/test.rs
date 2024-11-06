@@ -109,7 +109,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
 
     assert_eq!(tcphdr_fin.fin, true);
     assert_eq!(tcphdr_fin.ack, true);
-    assert_eq!(tcphdr_fin.acknowledgment_number, 101);
+    assert_eq!(tcphdr_fin.acknowledgment_number, 102);
     assert_eq!(tcphdr_fin.source_port, 22);
     assert_eq!(tcphdr_fin.destination_port, 35000);
 

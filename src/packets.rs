@@ -142,14 +142,17 @@ impl TcpTlb {
                     if tcphdr.ack && (tcphdr.acknowledgment_number >= self.send.next) {
                         self.send.acked = tcphdr.acknowledgment_number;
                     }
+
+                    if tcphdr.fin {
+                        // RFC 793, p.79: FIN: "A control bit (finis) occupying one sequence number"
+                        self.recv.next += 1;
+
+                        self.state = TcpState::CloseWait;
+                        event = TcpEvent::ConnectionClosing;
+                    }
                 }
 
                 self.build_ack_packet(&[], self.send.next, response)?;
-
-                if tcphdr.fin {
-                    self.state = TcpState::CloseWait;
-                    event = TcpEvent::ConnectionClosing;
-                }
             }
             TcpState::CloseWait => {}
             TcpState::LastAck => {
