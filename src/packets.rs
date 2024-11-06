@@ -138,10 +138,10 @@ impl TcpTlb {
                     if tcphdr.psh || self.recv.window_size == 0 {
                         event = TcpEvent::DataReceived(payload.len());
                     }
-                }
 
-                if tcphdr.acknowledgment_number >= self.send.next {
-                    self.send.acked = tcphdr.acknowledgment_number;
+                    if tcphdr.ack && (tcphdr.acknowledgment_number >= self.send.next) {
+                        self.send.acked = tcphdr.acknowledgment_number;
+                    }
                 }
 
                 self.build_ack_packet(&[], self.send.next, response)?;
