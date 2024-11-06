@@ -41,10 +41,13 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     const CLIENT_SEQNUM: u32 = 100;
     let response_syn = receive_syn(&mut server, CLIENT_SEQNUM);
 
-    // Send ACK + DATA packet
+    // Send ACK packet
     let acknum = seqnum_from(&response_syn) + 1;
     let seqnum = CLIENT_SEQNUM + 1;
+
     let resp_ack = send_ack_to(&mut server, seqnum, &[], acknum);
+
+    // Send data packet
     let (_, tcphdr, payload) = send_ack_with_extract_to(&mut server, seqnum, &[1, 2, 3], acknum);
 
     assert_eq!(resp_ack, &[]);

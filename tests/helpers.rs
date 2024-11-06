@@ -62,8 +62,8 @@ pub fn build_ack_packet_to_server(payload: &[u8], seqnum: u32, ack_seqnum: u32) 
     )
     .tcp(
         35000,  // source
-        22,     //destination
-        seqnum, //seq
+        22,     // destination
+        seqnum, // seq
         10,     // window size)
     )
     .ack(ack_seqnum)
