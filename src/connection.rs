@@ -223,6 +223,7 @@ impl RustTcp {
                 TcpEvent::ConnectionClosed => {
                     println!("REMOVE CONN");
                     self.conns.remove(&conn);
+                    self.poll_queue.push_front(event);
                 }
                 TcpEvent::NoEvent => (),
                 _ => self.poll_queue.push_front(event),

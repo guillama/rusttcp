@@ -85,7 +85,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let fin_resp = send_fin_to(&mut server, CLIENT_SEQNUM + 1, &resp_syn);
 
-    let event = server.poll().unwrap();
+    let event1 = server.poll().unwrap();
     server.close(fd);
 
     // Extract the FIN request to close the other half connection
@@ -101,7 +101,11 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     let response = send_ack_to(&mut server, CLIENT_SEQNUM + 1, &[], ack_seqnum);
     let (_, tcphdr_reset, _) = extract_packet(&response);
 
-    assert_eq!(event, TcpEvent::ConnectionClosing);
+    let event2 = server.poll().unwrap();
+
+    assert_eq!(event1, TcpEvent::ConnectionClosing);
+    assert_eq!(event2, TcpEvent::ConnectionClosed);
+
     assert_eq!(tcphdr_fin.fin, true);
     assert_eq!(tcphdr_fin.ack, true);
     assert_eq!(tcphdr_fin.acknowledgment_number, 101);
