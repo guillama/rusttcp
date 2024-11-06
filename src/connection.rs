@@ -92,6 +92,7 @@ pub struct RustTcpBuilder {
 impl RustTcpBuilder {
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcpBuilder {
+            window_size: RustTcp::DEFAULT_WINDOW_SIZE,
             src_ip,
             ..Default::default()
         }
@@ -133,7 +134,7 @@ impl RustTcp {
     const TCP_RETRIES_DEFAULT: Duration = Duration::from_millis(200);
     const TCP_RETRIES_NB_DEFAULT: u32 = 15;
     const DEFAULT_AVAILABLE_PORT: u16 = 36000;
-    const DEFAULT_WINDOW_SIZE: u16 = 1400;
+    pub const DEFAULT_WINDOW_SIZE: u16 = 1400;
 
     pub fn new(src_ip: [u8; 4]) -> Self {
         RustTcp {

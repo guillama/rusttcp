@@ -27,6 +27,7 @@ fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
     assert_eq!(tcphdr.syn, true);
     assert_eq!(tcphdr.ack, true);
     assert_eq!(tcphdr.acknowledgment_number, CLIENT_SEQNUM + 1);
+    assert_eq!(tcphdr.window_size, RustTcp::DEFAULT_WINDOW_SIZE);
 }
 
 #[test]
@@ -155,7 +156,9 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
 fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
@@ -177,7 +180,9 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
 fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+        .window_size(10)
+        .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
