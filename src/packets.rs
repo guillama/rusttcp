@@ -123,7 +123,11 @@ impl TcpTlb {
                 }
 
                 if tcphdr.acknowledgment_number != self.send.next {
-                    self.send_reset_packet(tcphdr, payload.len(), response)?;
+                    error!(
+                        "Unexpected Ack number : {} != {}",
+                        tcphdr.acknowledgment_number, self.send.next
+                    );
+                    return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
                 self.send.window_size = tcphdr.window_size;
@@ -148,9 +152,15 @@ impl TcpTlb {
                         event = TcpEvent::DataReceived(payload.len());
                     }
 
-                    if tcphdr.ack && (tcphdr.acknowledgment_number >= self.send.next) {
-                        self.send.acked = tcphdr.acknowledgment_number;
+                    if tcphdr.ack && (tcphdr.acknowledgment_number != self.send.next) {
+                        error!(
+                            "Unexpected Ack number : {} != {}",
+                            tcphdr.acknowledgment_number, self.send.next
+                        );
+                        return self.send_reset_packet(tcphdr, payload.len(), response);
                     }
+
+                    self.send.acked = tcphdr.acknowledgment_number;
 
                     if tcphdr.fin {
                         // RFC 793, p.79: FIN: "A control bit (finis) occupying one sequence number"
@@ -199,7 +209,7 @@ impl TcpTlb {
                 self.recv.window_size,
             )
             .rst()
-            .ack(tcphdr.sequence_number + payload_len as u32)
+            .ack(tcphdr.sequence_number.wrapping_add(payload_len as u32))
             .write(response, &[])?;
 
         Ok(TcpEvent::NoEvent)

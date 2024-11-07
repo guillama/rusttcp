@@ -101,7 +101,7 @@ pub fn seqnum_from(response: &[u8]) -> u32 {
 
 pub fn do_server_handshake(server: &mut RustTcp, seqnum: u32) -> Vec<u8> {
     let response_syn = receive_syn(server, seqnum);
-    let _ = send_ack_to(server, seqnum + 1, &[], seqnum_from(&response_syn));
+    let _ = send_ack_to(server, seqnum + 1, &[], seqnum_from(&response_syn) + 1);
 
     // return response_syn because no response_ack is expected
     // after sending a ack without data

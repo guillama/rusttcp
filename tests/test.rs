@@ -127,7 +127,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
 
     // Send a data packet to check that the connection has been removed
     // The server shall respond with a RESET packet
-    let ack_seqnum = seqnum_from(&resp_syn);
+    let ack_seqnum = seqnum_from(&resp_syn) + 1;
     let response = send_ack_to(&mut server, CLIENT_SEQNUM + 1, &[], ack_seqnum);
     let (_, tcphdr_reset, _) = extract_packet(&response);
 
@@ -160,7 +160,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
-    let ack_seqnum = seqnum_from(&resp_syn);
+    let ack_seqnum = seqnum_from(&resp_syn) + 1;
     let (_, tcphdr1, _) =
         send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
     let (_, tcphdr2, _) =
@@ -191,8 +191,8 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
+    let ack_seqnum = seqnum_from(&resp_syn) + 1;
     let data = &[1, 2, 3];
-    let ack_seqnum = seqnum_from(&resp_syn);
     let (_, tcphdr, _) =
         send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 300, data, ack_seqnum);
 
@@ -216,7 +216,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
-    let ack_seqnum = seqnum_from(&resp_syn);
+    let ack_seqnum = seqnum_from(&resp_syn) + 1;
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
@@ -238,8 +238,9 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
+
+    let ack_seqnum = seqnum_from(&resp_syn) + 1;
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let ack_seqnum = seqnum_from(&resp_syn);
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, data, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
@@ -261,13 +262,14 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
+
+    let ack_seqnum = seqnum_from(&resp_syn) + 1;
     let data1 = &[0x1, 0x2, 0x3, 0x4, 0x5];
-    let ack_seqnum = seqnum_from(&resp_syn);
     let response_data = send_ack_to(&mut server, CLIENT_SEQNUM + 1, data1, ack_seqnum);
 
+    let ack_seqnum = seqnum_from(&response_data);
     let seqnum = CLIENT_SEQNUM.wrapping_add(data1.len() as u32 + 1);
     let data2 = &[0x1, 0x2, 0x3];
-    let ack_seqnum = seqnum_from(&response_data);
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, seqnum, data2, ack_seqnum);
 
     let mut recv_buf = [0; 1504];
