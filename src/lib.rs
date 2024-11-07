@@ -7,4 +7,6 @@ pub mod packets;
 #[cfg(not(feature = "mocks"))]
 pub mod timer;
 
+extern crate ctor;
+extern crate log;
 extern crate tun;

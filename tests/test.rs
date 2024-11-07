@@ -2,12 +2,38 @@ extern crate etherparse;
 
 mod helpers;
 
+use ctor::ctor;
+use env_logger::Builder;
 use etherparse::{Ipv4Header, TcpHeader};
 use helpers::*;
+use log::LevelFilter;
 use rusttcp::connection::*;
 use rusttcp::fake_timer::*;
+use std::io::Write;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::u32::MAX;
+
+#[ctor]
+fn log_init() {
+    Builder::new()
+        .filter_level(LevelFilter::Error)
+        .format(|buf, record| {
+            let filename = Path::new(record.file().unwrap_or_default())
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            writeln!(
+                buf,
+                "[{:4}] [{:13}] [l.{:03}]: {}",
+                record.level(),
+                filename,
+                record.line().unwrap_or_default(),
+                record.args()
+            )
+        })
+        .init();
+}
 
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {

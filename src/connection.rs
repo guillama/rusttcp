@@ -1,6 +1,7 @@
 use crate::errors::RustTcpError;
 use crate::packets::TcpTlb;
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
+use log::{debug, error, info};
 
 #[cfg(feature = "mocks")]
 use crate::fake_timer::Timer;
@@ -148,6 +149,8 @@ impl RustTcp {
     pub fn open(&mut self, mode: RustTcpMode) -> Result<i32, RustTcpError> {
         let tlb = TcpTlb::new(self.default_window_size, self.default_seqnum);
 
+        info!("OPEN");
+
         thread_local! {
             static FD: Cell<i32> = Cell::new(0);
         }
@@ -160,6 +163,7 @@ impl RustTcp {
 
         match mode {
             RustTcpMode::Passive(src_port) => {
+                info!("Server listening on port {src_port}...");
                 self.listen_ports.insert(src_port, (fd, tlb.listen()?));
             }
             RustTcpMode::Active(server_ip, server_port) => {
@@ -181,11 +185,15 @@ impl RustTcp {
     }
 
     pub fn close(&mut self, fd: i32) {
+        info!("CLOSE");
+
         let usr_event = UserEvent::Close(fd);
         self.user_queue.push_front(usr_event);
     }
 
     pub fn read(&mut self, fd: i32, buf: &mut [u8]) -> Result<usize, RustTcpError> {
+        info!("READ");
+
         if let Some(c) = self.conns_by_fd.get(&fd) {
             if let Some(tlb) = self.conns.get_mut(c) {
                 return Ok(tlb.on_read(buf));
@@ -196,6 +204,8 @@ impl RustTcp {
     }
 
     pub fn write(&mut self, fd: i32, buf: &[u8]) -> Result<usize, RustTcpError> {
+        info!("WRITE");
+
         if self.conns_by_fd.get(&fd).is_none() {
             return Err(RustTcpError::ConnectionNotFound(fd));
         }
@@ -217,12 +227,13 @@ impl RustTcp {
 
         let conn = Connection::new(&iphdr, &tcphdr);
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
+            debug!("Connection already establihed");
             let tlb = e.get_mut();
             let event = tlb.on_packet(&tcphdr, payload, response)?;
 
             match event {
                 TcpEvent::ConnectionClosed => {
-                    println!("REMOVE CONN");
+                    debug!("Remove connection");
                     self.conns.remove(&conn);
                     self.poll_queue.push_front(event);
                 }
@@ -235,6 +246,10 @@ impl RustTcp {
 
         let entry = self.listen_ports.remove(&tcphdr.destination_port);
         if let Some((fd, tlb)) = entry {
+            info!(
+                "Server accepted connection on port {}",
+                tcphdr.destination_port
+            );
             let mut new_tlb: TcpTlb = tlb.connection(conn);
             new_tlb.on_packet(&tcphdr, payload, response)?;
 
@@ -246,6 +261,7 @@ impl RustTcp {
 
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
+            error!("Connection not found : {:?}", &conn);
             TcpTlb::new(0, 0)
                 .connection(conn)
                 .on_packet(&tcphdr, payload, response)?;
@@ -365,6 +381,7 @@ impl RustTcp {
 
         if self.tcp_retries == self.tcp_max_retries {
             if let Some(c) = self.conns_by_fd.remove(&fd) {
+                debug!("Remove connection");
                 self.conns.remove(&c);
             }
 

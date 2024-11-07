@@ -6,6 +6,9 @@ use std::io;
 use crate::connection::{Connection, TcpEvent};
 use crate::errors::RustTcpError;
 use etherparse::{PacketBuilder, TcpHeader};
+use log::debug;
+use log::error;
+use log::info;
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 enum TcpState {
@@ -78,12 +81,15 @@ impl TcpTlb {
     {
         let mut event: TcpEvent = TcpEvent::NoEvent;
 
+        info!("state = {:?}", &self.state);
+
         match self.state {
             TcpState::Closed => {
                 self.send_reset_packet(tcphdr, payload.len(), response)?;
             }
             TcpState::Listen => {
                 if !tcphdr.syn {
+                    error!("Not a SYN packet");
                     return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
@@ -94,10 +100,12 @@ impl TcpTlb {
             }
             TcpState::SynSent => {
                 if !tcphdr.ack || !tcphdr.syn {
+                    error!("Not a ACK and SYN packet");
                     return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
                 if tcphdr.acknowledgment_number != self.send.next {
+                    error!("ACK num != SEND next");
                     self.send_reset_packet(tcphdr, payload.len(), response)?;
                 }
 
@@ -110,6 +118,7 @@ impl TcpTlb {
             }
             TcpState::SynReceived => {
                 if !tcphdr.ack {
+                    error!("Not a ACK packet : {:?}", tcphdr);
                     return self.send_reset_packet(tcphdr, payload.len(), response);
                 }
 
@@ -179,6 +188,8 @@ impl TcpTlb {
             true => tcphdr.acknowledgment_number,
             false => 0,
         };
+
+        info!("Send RESET packet with seqnum {}", seqnum);
 
         PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
@@ -327,6 +338,8 @@ impl TcpTlb {
     where
         T: io::Write + Sized,
     {
+        debug!("on_close");
+
         match self.state {
             TcpState::CloseWait => {
                 self.build_fin_packet(request)?;
@@ -342,6 +355,8 @@ impl TcpTlb {
     where
         T: io::Write + Sized,
     {
+        debug!("Send FIN packet");
+
         PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
             .tcp(
                 self.connection.dest_port,
