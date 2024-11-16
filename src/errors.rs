@@ -1,12 +1,15 @@
 extern crate etherparse;
 
+use crate::connection::RustTcp;
 use etherparse::err::packet::BuildWriteError;
 use std::error::Error;
 use std::fmt;
+use std::sync::{MutexGuard, PoisonError};
 
 #[derive(Debug)]
 pub enum RustTcpError {
     PacketBuild(BuildWriteError),
+    ThreadError,
     ConnectionNotFound(i32),
     ElementNotFound,
     BadPacketSize(usize),
@@ -51,6 +54,9 @@ impl fmt::Display for RustTcpError {
             RustTcpError::MaxRetransmissionsReached(value) => {
                 write!(f, "Error: Max retransmissions reached : {}", value)
             }
+            RustTcpError::ThreadError => {
+                write!(f, "Error: Cannot acquire lock because of thread panic")
+            }
         }
     }
 }
@@ -67,5 +73,11 @@ impl Error for RustTcpError {
 impl From<BuildWriteError> for RustTcpError {
     fn from(value: BuildWriteError) -> Self {
         Self::PacketBuild(value)
+    }
+}
+
+impl<'a> From<PoisonError<MutexGuard<'a, RustTcp>>> for RustTcpError {
+    fn from(_value: PoisonError<MutexGuard<'a, RustTcp>>) -> Self {
+        Self::ThreadError
     }
 }
