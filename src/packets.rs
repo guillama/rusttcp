@@ -305,16 +305,16 @@ impl TcpTlb {
     }
 
     pub fn send_syn(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
-        let mut bytes_to_send = 0;
-        match self.state {
+        let n = match self.state {
             TcpState::Closed => {
-                bytes_to_send = self.build_syn_packet(request)?;
+                let n = self.build_syn_packet(request)?;
                 self.state = TcpState::SynSent;
+                n
             }
             _ => unimplemented!(),
-        }
+        };
 
-        Ok(bytes_to_send)
+        Ok(n)
     }
 
     fn build_syn_packet(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
@@ -401,19 +401,18 @@ impl TcpTlb {
         let packet = &self.send.buf[curr_packet_index..last_packet_index];
         let last_buf_index = self.send.buf[curr_packet_index..].len();
 
-        let mut bytes_to_send = 0;
-        if last_packet_index < last_buf_index {
-            bytes_to_send = self.build_ack_packet(packet, self.send.next, request)?;
+        let n = if last_packet_index < last_buf_index {
+            self.build_ack_packet(packet, self.send.next, request)?
         } else {
-            bytes_to_send = self.build_push_ack_packet(packet, self.send.next, request)?;
-        }
+            self.build_push_ack_packet(packet, self.send.next, request)?
+        };
 
         self.send.next = self.send.next.wrapping_add(send_size as u32);
         remain_size -= send_size;
 
         match remain_size {
-            0 => Ok(WritePacket::LastPacket(bytes_to_send)),
-            _ => Ok(WritePacket::Packet(bytes_to_send)),
+            0 => Ok(WritePacket::LastPacket(n)),
+            _ => Ok(WritePacket::Packet(n)),
         }
     }
 
@@ -426,16 +425,15 @@ impl TcpTlb {
         let last_packet_index = curr_packet_index + send_size;
         let packet = &self.send.buf[curr_packet_index..last_packet_index];
 
-        let mut bytes_to_send = 0;
-        if (remain_size - send_size) > 0 {
-            bytes_to_send = self.build_ack_packet(packet, self.send.acked, request)?;
+        let n = if (remain_size - send_size) > 0 {
+            self.build_ack_packet(packet, self.send.acked, request)?
         } else {
-            bytes_to_send = self.build_push_ack_packet(packet, self.send.acked, request)?;
-        }
+            self.build_push_ack_packet(packet, self.send.acked, request)?
+        };
 
         match remain_size {
-            0 => Ok(WritePacket::LastPacket(bytes_to_send)),
-            _ => Ok(WritePacket::Packet(bytes_to_send)),
+            0 => Ok(WritePacket::LastPacket(n)),
+            _ => Ok(WritePacket::Packet(n)),
         }
     }
 }

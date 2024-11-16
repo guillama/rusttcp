@@ -306,48 +306,47 @@ impl RustTcp {
 
     pub fn on_user_event(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
         let event: Option<UserEvent> = self.user_queue.pop_front();
-        let mut bytes_to_send: usize = 0;
-
-        match event {
+        let n = match event {
             Some(UserEvent::Open(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                bytes_to_send = tlb.send_syn(request)?;
+                tlb.send_syn(request)?
             }
             Some(UserEvent::Close(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                bytes_to_send = tlb.on_close(request)?;
+                let n = tlb.on_close(request)?;
                 self.conns_by_fd.remove(&fd);
+                n
             }
             Some(UserEvent::Write(fd, user_buf)) => {
                 self.timer_queue
                     .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
 
                 let tlb = self.tlb_from_connection(fd)?;
-                bytes_to_send = match tlb.on_write(&user_buf, request)? {
+                match tlb.on_write(&user_buf, request)? {
                     WritePacket::Packet(n) => {
                         self.user_queue.push_front(UserEvent::WriteNext(fd));
                         n
                     }
                     WritePacket::LastPacket(n) => n,
-                };
+                }
             }
             Some(UserEvent::WriteNext(fd)) => {
                 self.timer_queue
                     .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
 
                 let tlb = self.tlb_from_connection(fd)?;
-                bytes_to_send = match tlb.on_write(&[], request)? {
+                match tlb.on_write(&[], request)? {
                     WritePacket::Packet(n) => {
                         self.user_queue.push_front(UserEvent::WriteNext(fd));
                         n
                     }
                     WritePacket::LastPacket(n) => n,
-                };
+                }
             }
             None => return Err(RustTcpError::ElementNotFound),
-        }
+        };
 
-        Ok(bytes_to_send)
+        Ok(n)
     }
 
     fn tlb_from_connection(&mut self, fd: i32) -> Result<&mut TcpTlb, RustTcpError> {
