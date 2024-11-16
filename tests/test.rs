@@ -480,22 +480,22 @@ fn send_user_data_with_length_bigger_than_the_window_size() {
     let data = &[1, 2, 3, 4, 5, 6, 7, 8];
     client.write(fd_client, data).unwrap();
 
-    let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
+    let (iphdr1, tcphdr1, payload1, send_size1) = process_user_event_with_extract(&mut client);
     let payload_len1 = TcpHeader::MIN_LEN + WINDOW_SIZE as usize;
     let expected_iphdr1 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len1);
 
-    let (iphdr2, tcphdr2, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
+    let (iphdr2, tcphdr2, payload2, send_size2) = process_user_event_with_extract(&mut client);
     let payload_len2 = TcpHeader::MIN_LEN + (data.len() - WINDOW_SIZE as usize);
     let expected_iphdr2 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len2);
 
-    assert_eq!(next_data_size1, 3);
+    assert_eq!(send_size1, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 5);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, &[1, 2, 3, 4, 5]);
     assert_eq!(tcphdr1.sequence_number, 501);
     assert_eq!(tcphdr1.ack, true);
     assert_eq!(tcphdr1.acknowledgment_number, expected_acknum);
 
-    assert_eq!(next_data_size2, 0);
+    assert_eq!(send_size2, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 3);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, &[6, 7, 8]);
     assert_eq!(tcphdr2.sequence_number, 506);
@@ -525,20 +525,20 @@ fn send_several_user_data_within_the_window_size() {
     let data2 = &[5, 6, 7];
     client.write(fd_client, data2).unwrap();
 
-    let (iphdr1, tcphdr1, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
+    let (iphdr1, tcphdr1, payload1, send_size1) = process_user_event_with_extract(&mut client);
     let payload_len1 = TcpHeader::MIN_LEN + data1.len();
     let expected_iphdr1 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len1);
 
-    let (iphdr2, tcphdr2, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
+    let (iphdr2, tcphdr2, payload2, send_size2) = process_user_event_with_extract(&mut client);
     let payload_len2 = TcpHeader::MIN_LEN + data2.len();
     let expected_iphdr2 = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len2);
 
-    assert_eq!(next_data_size1, 0);
+    assert_eq!(send_size1, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 5);
     assert_eq!(iphdr1, expected_iphdr1);
     assert_eq!(payload1, data1);
     assert_eq!(tcphdr1.sequence_number, CLIENT_SEQNUM + 1);
 
-    assert_eq!(next_data_size2, 0);
+    assert_eq!(send_size2, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 3);
     assert_eq!(iphdr2, expected_iphdr2);
     assert_eq!(payload2, data2);
 
@@ -565,25 +565,25 @@ fn send_several_user_data_with_length_bigger_than_the_window_size() {
     let data2 = &[12, 13, 14, 15, 16, 17, 18];
     client.write(fd_client, data2).unwrap();
 
-    let (_, _, payload1, next_data_size1) = process_user_event_with_extract(&mut client);
-    let (_, _, payload2, next_data_size2) = process_user_event_with_extract(&mut client);
-    let (_, _, payload3, next_data_size3) = process_user_event_with_extract(&mut client);
-    let (_, _, payload4, next_data_size4) = process_user_event_with_extract(&mut client);
-    let (_, _, payload5, next_data_size5) = process_user_event_with_extract(&mut client);
+    let (_, _, payload1, send_size1) = process_user_event_with_extract(&mut client);
+    let (_, _, payload2, send_size2) = process_user_event_with_extract(&mut client);
+    let (_, _, payload3, send_size3) = process_user_event_with_extract(&mut client);
+    let (_, _, payload4, send_size4) = process_user_event_with_extract(&mut client);
+    let (_, _, payload5, send_size5) = process_user_event_with_extract(&mut client);
 
-    assert_eq!(next_data_size1, 6);
+    assert_eq!(send_size1, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 5);
     assert_eq!(payload1, &[1, 2, 3, 4, 5]);
 
-    assert_eq!(next_data_size2, 1);
+    assert_eq!(send_size2, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 5);
     assert_eq!(payload2, &[6, 7, 8, 9, 10]);
 
-    assert_eq!(next_data_size3, 0);
+    assert_eq!(send_size3, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 1);
     assert_eq!(payload3, &[11]);
 
-    assert_eq!(next_data_size4, 2);
+    assert_eq!(send_size4, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 5);
     assert_eq!(payload4, &[12, 13, 14, 15, 16]);
 
-    assert_eq!(next_data_size5, 0);
+    assert_eq!(send_size5, Ipv4Header::MIN_LEN + TcpHeader::MIN_LEN + 2);
     assert_eq!(payload5, &[17, 18]);
 }
 
@@ -604,7 +604,7 @@ fn server_window_size_is_updated_after_receiving_data() {
     client.write(fd_client, data).unwrap();
     let client_data = process_user_event(&mut client);
 
-    let mut response = Vec::new();
+    let mut response = [0; 1400];
     server.on_packet(&client_data, &mut response).unwrap();
     let (_, tcphdr, _) = extract_packet(&response);
 
@@ -629,12 +629,12 @@ fn server_window_size_is_updated_after_receiving_data_length_equal_to_window_siz
     client.write(fd_client, data).unwrap();
     let client_data = process_user_event(&mut client);
 
-    let mut response = Vec::new();
+    let mut response = [0; 1400];
     server.on_packet(&client_data, &mut response).unwrap();
     let (_, tcphdr, _) = extract_packet(&response);
 
     assert_eq!(tcphdr.ack, true);
-    assert_eq!(tcphdr.window_size, WINDOW_SIZE - data.len() as u16);
+    assert_eq!(tcphdr.window_size, 0);
 }
 
 #[test]
@@ -654,7 +654,8 @@ fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
     client.write(fd_client, data).unwrap();
 
     let client_packet = process_user_event(&mut client);
-    server.on_packet(&client_packet, &mut Vec::new()).unwrap();
+    let mut response = [0; 1400];
+    server.on_packet(&client_packet, &mut response).unwrap();
 
     let event1 = server.poll().unwrap();
 
@@ -686,7 +687,8 @@ fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
     client.write(fd_client, data).unwrap();
 
     let client_packet1 = process_user_event(&mut client);
-    server.on_packet(&client_packet1, &mut Vec::new()).unwrap();
+    let mut response = [0; 1400];
+    server.on_packet(&client_packet1, &mut response).unwrap();
     let event = server.poll().unwrap();
 
     let mut recv_buf = [0; 1504];
@@ -713,7 +715,7 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
     client.write(fd_client, data).unwrap();
     let client_packet1 = process_user_event(&mut client);
 
-    let mut server_ack = Vec::new();
+    let mut server_ack = [0; 1400];
     server.on_packet(&client_packet1, &mut server_ack).unwrap();
     let _ = server.poll().unwrap();
 
@@ -721,7 +723,8 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
     let read_size1 = server.read(fd_server, &mut recv_buf[0..]).unwrap();
 
     let client_packet2 = process_user_event(&mut client);
-    server.on_packet(&client_packet2, &mut Vec::new()).unwrap();
+    let mut response = [0; 1400];
+    server.on_packet(&client_packet2, &mut response).unwrap();
     let event2 = server.poll().unwrap();
 
     let read_size2 = server.read(fd_server, &mut recv_buf[read_size1..]).unwrap();
@@ -775,15 +778,20 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
 
     fake_timer.lock().unwrap().add_millisecs(1); // timeout +1600ms
     let client_packet_retransmitted4 = process_timeout_event(&mut client);
+    dbg!(line!());
 
     fake_timer.lock().unwrap().add_millisecs(3199);
     let client_packet_not_retransmitted4 = process_timeout_event(&mut client);
+    dbg!(line!());
 
     fake_timer.lock().unwrap().add_millisecs(1); // timeout +3200ms
     let client_packet_retransmitted5 = process_timeout_event(&mut client);
 
+    dbg!(line!());
     fake_timer.lock().unwrap().add_millisecs(6400); // timeout +6400ms
     let client_packet_retransmitted6 = process_timeout_event(&mut client);
+
+    dbg!(line!());
 
     // Check that the connection has been removed
     client.write(fd_client, data).unwrap_err();
@@ -834,9 +842,10 @@ fn client_resets_its_timer_after_receiving_a_response() {
     fake_timer.lock().unwrap().add_millisecs(400);
     let client_packet_retransmitted2 = process_timeout_event(&mut client);
 
-    let mut server_ack = Vec::new();
+    let mut server_ack = [0; 1400];
+    let mut response = [0; 1400];
     server.on_packet(&client_packet1, &mut server_ack).unwrap();
-    client.on_packet(&server_ack, &mut Vec::new()).unwrap();
+    client.on_packet(&server_ack, &mut response).unwrap();
 
     let client_packet2 = process_user_event(&mut client);
 
@@ -871,7 +880,8 @@ fn server_closes_connection_after_receiving_a_reset_from_client() {
 
     // Send reset
     let reset_packet = build_reset_packet();
-    server.on_packet(&reset_packet, &mut Vec::new()).unwrap();
+    let mut response = [0; 1400];
+    server.on_packet(&reset_packet, &mut response).unwrap();
 
     let event = server.poll().unwrap();
 

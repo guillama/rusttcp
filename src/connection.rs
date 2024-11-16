@@ -1,5 +1,5 @@
-use crate::errors::RustTcpError;
 use crate::packets::TcpTlb;
+use crate::{errors::RustTcpError, packets::WritePacket};
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use log::{debug, error, info};
 
@@ -11,7 +11,6 @@ use crate::timer::Timer;
 use std::{
     cell::Cell,
     collections::{hash_map::Entry, HashMap, VecDeque},
-    io,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -219,17 +218,14 @@ impl RustTcp {
         Ok(self.poll_queue.pop_back().unwrap_or(TcpEvent::NoEvent))
     }
 
-    pub fn on_packet<T>(&mut self, packet: &[u8], response: &mut T) -> Result<(), RustTcpError>
-    where
-        T: io::Write + Sized,
-    {
+    pub fn on_packet(&mut self, packet: &[u8], response: &mut [u8]) -> Result<usize, RustTcpError> {
         let (iphdr, tcphdr, payload) = self.check_and_parse(packet)?;
 
         let conn = Connection::new(&iphdr, &tcphdr);
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
             debug!("Connection already establihed");
             let tlb = e.get_mut();
-            let event = tlb.on_packet(&tcphdr, payload, response)?;
+            let (event, n) = tlb.on_packet(&tcphdr, payload, response)?;
 
             match event {
                 TcpEvent::ConnectionClosed => {
@@ -241,7 +237,7 @@ impl RustTcp {
                 _ => self.poll_queue.push_front(event),
             }
 
-            return Ok(());
+            return Ok(n);
         }
 
         let entry = self.listen_ports.remove(&tcphdr.destination_port);
@@ -251,24 +247,25 @@ impl RustTcp {
                 tcphdr.destination_port
             );
             let mut new_tlb: TcpTlb = tlb.connection(conn);
-            new_tlb.on_packet(&tcphdr, payload, response)?;
+            let (_, n) = new_tlb.on_packet(&tcphdr, payload, response)?;
 
             self.conns.insert(conn, new_tlb);
             self.conns_by_fd.insert(fd, conn);
 
-            return Ok(());
+            return Ok(n);
         }
 
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
             error!("Connection not found : {:?}", &conn);
-            TcpTlb::new(0, 0)
+            dbg!(&self.conns_by_fd);
+            let (_, n) = TcpTlb::new(0, 0)
                 .connection(conn)
                 .on_packet(&tcphdr, payload, response)?;
-            return Ok(());
+            return Ok(n);
         }
 
-        Ok(())
+        Ok(0)
     }
 
     fn check_and_parse<'pkt>(
@@ -307,49 +304,50 @@ impl RustTcp {
         Ok(())
     }
 
-    pub fn on_user_event<T>(&mut self, request: &mut T) -> Result<usize, RustTcpError>
-    where
-        T: io::Write + Sized,
-    {
-        let mut remain_size = 0;
+    pub fn on_user_event(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
         let event: Option<UserEvent> = self.user_queue.pop_front();
+        let mut bytes_to_send: usize = 0;
 
         match event {
             Some(UserEvent::Open(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                tlb.send_syn(request)?;
+                bytes_to_send = tlb.send_syn(request)?;
             }
             Some(UserEvent::Close(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                tlb.on_close(request)?;
+                bytes_to_send = tlb.on_close(request)?;
                 self.conns_by_fd.remove(&fd);
             }
             Some(UserEvent::Write(fd, user_buf)) => {
-                let tlb = self.tlb_from_connection(fd)?;
-                remain_size = tlb.on_write(&user_buf, request)?;
-
-                if remain_size > 0 {
-                    self.user_queue.push_front(UserEvent::WriteNext(fd));
-                }
-
                 self.timer_queue
                     .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
+
+                let tlb = self.tlb_from_connection(fd)?;
+                bytes_to_send = match tlb.on_write(&user_buf, request)? {
+                    WritePacket::Packet(n) => {
+                        self.user_queue.push_front(UserEvent::WriteNext(fd));
+                        n
+                    }
+                    WritePacket::LastPacket(n) => n,
+                };
             }
             Some(UserEvent::WriteNext(fd)) => {
-                let tlb = self.tlb_from_connection(fd)?;
-                remain_size = tlb.on_write(&[], request)?;
-
                 self.timer_queue
                     .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
 
-                if remain_size > 0 {
-                    self.user_queue.push_front(UserEvent::WriteNext(fd));
-                }
+                let tlb = self.tlb_from_connection(fd)?;
+                bytes_to_send = match tlb.on_write(&[], request)? {
+                    WritePacket::Packet(n) => {
+                        self.user_queue.push_front(UserEvent::WriteNext(fd));
+                        n
+                    }
+                    WritePacket::LastPacket(n) => n,
+                };
             }
             None => return Err(RustTcpError::ElementNotFound),
         }
 
-        Ok(remain_size)
+        Ok(bytes_to_send)
     }
 
     fn tlb_from_connection(&mut self, fd: i32) -> Result<&mut TcpTlb, RustTcpError> {
@@ -362,10 +360,7 @@ impl RustTcp {
         Err(RustTcpError::ConnectionNotFound(fd))
     }
 
-    pub fn on_timer_event<W>(&mut self, request: &mut W) -> Result<usize, RustTcpError>
-    where
-        W: io::Write + Sized,
-    {
+    pub fn on_timer_event(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
         let (fd, duration) =
             if let Some(TimerEvent::Timeout(n, duration)) = self.timer_queue.front() {
                 (*n, *duration)
@@ -388,13 +383,19 @@ impl RustTcp {
             return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
         }
 
-        let send_size = self.tlb_from_connection(fd)?.on_timeout(request)?;
+        let bytes_to_send = match self.tlb_from_connection(fd)?.on_timeout(request)? {
+            WritePacket::Packet(n) => {
+                self.user_queue.push_front(UserEvent::WriteNext(fd));
+                n
+            }
+            WritePacket::LastPacket(n) => n,
+        };
         let new_event = TimerEvent::Timeout(fd, duration * 2);
 
         self.timer_queue.push_front(new_event);
         self.timer.lock().unwrap().reset();
         self.tcp_retries += 1;
 
-        return Ok(send_size);
+        return Ok(bytes_to_send);
     }
 }
