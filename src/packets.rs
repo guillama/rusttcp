@@ -4,7 +4,11 @@ use std::cmp;
 
 use crate::connection::{Connection, TcpEvent};
 use crate::errors::RustTcpError;
-use etherparse::{PacketBuilder, TcpHeader};
+use crate::packet_build::{
+    build_ack_packet, build_fin_packet, build_push_ack_packet, build_reset_packet,
+    build_syn_ack_packet, build_syn_packet,
+};
+use etherparse::TcpHeader;
 use log::debug;
 use log::error;
 use log::info;
@@ -76,62 +80,73 @@ impl TcpTlb {
         response: &mut [u8],
     ) -> Result<(TcpEvent, usize), RustTcpError> {
         let mut event: TcpEvent = TcpEvent::NoEvent;
-        let mut bytes_to_send: usize = 0;
+        let mut n: usize = 0;
 
         info!("state = {:?}", &self.state);
 
         match self.state {
             TcpState::Closed => {
-                bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                return Ok((TcpEvent::NoEvent, bytes_to_send));
+                n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                return Ok((TcpEvent::NoEvent, n));
             }
             TcpState::Listen => {
                 if !tcphdr.syn {
                     error!("Not a SYN packet");
-                    bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                    return Ok((TcpEvent::NoEvent, bytes_to_send));
+                    n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                    return Ok((TcpEvent::NoEvent, n));
                 }
 
                 self.recv.isa = tcphdr.sequence_number;
                 self.recv.next = self.recv.isa + 1;
                 self.state = TcpState::SynReceived;
 
-                bytes_to_send = self.build_syn_ack_packet(response)?;
+                n = build_syn_ack_packet(
+                    self.connection,
+                    self.send.isa,
+                    self.recv.next,
+                    self.recv.window_size,
+                    response,
+                )?;
             }
             TcpState::SynSent => {
                 if !tcphdr.ack || !tcphdr.syn {
                     error!("Not a ACK and SYN packet");
-                    bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                    return Ok((TcpEvent::NoEvent, bytes_to_send));
+                    n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                    return Ok((TcpEvent::NoEvent, n));
                 }
 
                 if tcphdr.acknowledgment_number != self.send.next {
                     error!("ACK num != SEND next");
-                    bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                    return Ok((TcpEvent::NoEvent, bytes_to_send));
+                    n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                    return Ok((TcpEvent::NoEvent, n));
                 }
 
                 self.recv.isa = tcphdr.sequence_number;
                 self.recv.next = self.recv.isa + 1;
                 self.send.window_size = tcphdr.window_size;
 
-                bytes_to_send = self.build_ack_packet(&[], self.send.next, response)?;
+                n = build_ack_packet(
+                    self.connection,
+                    &[],
+                    self.send.next,
+                    self.recv.next,
+                    self.recv.window_size,
+                    response,
+                )?;
                 self.state = TcpState::Established;
             }
             TcpState::SynReceived => {
                 if !tcphdr.ack {
                     error!("Not a ACK packet : {:?}", tcphdr);
-                    bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                    return Ok((TcpEvent::NoEvent, bytes_to_send));
+                    n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                    return Ok((TcpEvent::NoEvent, n));
                 }
 
-                if tcphdr.acknowledgment_number != self.send.next {
-                    error!(
-                        "Unexpected Ack number : {} != {}",
-                        tcphdr.acknowledgment_number, self.send.next
-                    );
-                    bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                    return Ok((TcpEvent::NoEvent, bytes_to_send));
+                let acknum = tcphdr.acknowledgment_number;
+                if acknum != self.send.next {
+                    error!("Unexpected Ack number : {} != {}", acknum, self.send.next);
+                    n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                    return Ok((TcpEvent::NoEvent, n));
                 }
 
                 self.send.window_size = tcphdr.window_size;
@@ -156,13 +171,11 @@ impl TcpTlb {
                         event = TcpEvent::DataReceived(payload.len());
                     }
 
-                    if tcphdr.ack && (tcphdr.acknowledgment_number != self.send.next) {
-                        error!(
-                            "Unexpected Ack number : {} != {}",
-                            tcphdr.acknowledgment_number, self.send.next
-                        );
-                        bytes_to_send = self.send_reset_packet(tcphdr, payload.len(), response)?;
-                        return Ok((TcpEvent::NoEvent, bytes_to_send));
+                    let acknum = tcphdr.acknowledgment_number;
+                    if tcphdr.ack && (acknum != self.send.next) {
+                        error!("Unexpected Ack number : {} != {}", acknum, self.send.next);
+                        n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
+                        return Ok((TcpEvent::NoEvent, n));
                     }
 
                     self.send.acked = tcphdr.acknowledgment_number;
@@ -176,7 +189,14 @@ impl TcpTlb {
                     }
                 }
 
-                bytes_to_send = self.build_ack_packet(&[], self.send.next, response)?;
+                n = build_ack_packet(
+                    self.connection,
+                    &[],
+                    self.send.next,
+                    self.recv.next,
+                    self.recv.window_size,
+                    response,
+                )?;
             }
             TcpState::CloseWait => {}
             TcpState::LastAck => {
@@ -187,97 +207,7 @@ impl TcpTlb {
             }
         }
 
-        Ok((event, bytes_to_send))
-    }
-
-    fn send_reset_packet(
-        &self,
-        tcphdr: &TcpHeader,
-        payload_len: usize,
-        response: &mut [u8],
-    ) -> Result<usize, RustTcpError> {
-        let seqnum = match tcphdr.ack {
-            true => tcphdr.acknowledgment_number,
-            false => 0,
-        };
-
-        info!("Send RESET packet with seqnum {}", seqnum);
-
-        let mut response = &mut response[..];
-        PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
-            .tcp(
-                self.connection.dest_port,
-                self.connection.src_port,
-                seqnum,
-                self.recv.window_size,
-            )
-            .rst()
-            .ack(tcphdr.sequence_number.wrapping_add(payload_len as u32))
-            .write(&mut response, &[])?;
-
-        Ok(etherparse::Ipv4Header::MIN_LEN + etherparse::TcpHeader::MIN_LEN)
-    }
-
-    fn build_syn_ack_packet(&mut self, response: &mut [u8]) -> Result<usize, RustTcpError> {
-        let server_ip = self.connection.dest_ip;
-        let server_port = self.connection.dest_port;
-        let client_ip = self.connection.src_ip;
-        let client_port = self.connection.src_port;
-
-        let mut response = &mut response[..];
-        PacketBuilder::ipv4(server_ip, client_ip, 64)
-            .tcp(
-                server_port,
-                client_port,
-                self.send.isa,
-                self.recv.window_size,
-            )
-            .syn()
-            .ack(self.recv.next)
-            .write(&mut response, &[])?;
-
-        Ok(etherparse::Ipv4Header::MIN_LEN + etherparse::TcpHeader::MIN_LEN)
-    }
-
-    fn build_ack_packet(
-        &self,
-        data: &[u8],
-        seqnum: u32,
-        request: &mut [u8],
-    ) -> Result<usize, RustTcpError> {
-        let server_ip = self.connection.src_ip;
-        let server_port = self.connection.src_port;
-        let client_ip = self.connection.dest_ip;
-        let client_port = self.connection.dest_port;
-
-        let mut request = &mut request[..];
-        PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(client_port, server_port, seqnum, self.recv.window_size)
-            .ack(self.recv.next)
-            .write(&mut request, data)?;
-
-        Ok(etherparse::Ipv4Header::MIN_LEN + etherparse::TcpHeader::MIN_LEN + data.len())
-    }
-
-    fn build_push_ack_packet(
-        &self,
-        data: &[u8],
-        seqnum: u32,
-        request: &mut [u8],
-    ) -> Result<usize, RustTcpError> {
-        let server_ip = self.connection.src_ip;
-        let server_port = self.connection.src_port;
-        let client_ip = self.connection.dest_ip;
-        let client_port = self.connection.dest_port;
-
-        let mut request = &mut request[..];
-        PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(client_port, server_port, seqnum, self.recv.window_size)
-            .ack(self.recv.next)
-            .psh()
-            .write(&mut request, data)?;
-
-        Ok(etherparse::Ipv4Header::MIN_LEN + etherparse::TcpHeader::MIN_LEN + data.len())
+        Ok((event, n))
     }
 
     fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {
@@ -304,67 +234,17 @@ impl TcpTlb {
         Ok(self)
     }
 
-    pub fn send_syn(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
-        let n = match self.state {
-            TcpState::Closed => {
-                let n = self.build_syn_packet(request)?;
-                self.state = TcpState::SynSent;
-                n
-            }
-            _ => unimplemented!(),
-        };
-
-        Ok(n)
-    }
-
-    fn build_syn_packet(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
-        let server_ip = self.connection.src_ip;
-        let server_port = self.connection.src_port;
-        let client_ip = self.connection.dest_ip;
-        let client_port = self.connection.dest_port;
-
-        let mut request = &mut request[..];
-        PacketBuilder::ipv4(client_ip, server_ip, 64)
-            .tcp(
-                client_port,
-                server_port,
-                self.send.isa,
-                self.recv.window_size,
-            )
-            .syn()
-            .write(&mut request, &[])?;
-
-        Ok(etherparse::Ipv4Header::MIN_LEN + etherparse::TcpHeader::MIN_LEN)
-    }
-
     pub fn on_close(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
         debug!("on_close");
 
         match self.state {
             TcpState::CloseWait => {
                 self.state = TcpState::LastAck;
-                return Ok(self.build_fin_packet(request)?);
+                let n = build_fin_packet(self.connection, self.send.isa, self.recv.next, request)?;
+                return Ok(n);
             }
             _ => unimplemented!(),
         }
-    }
-
-    fn build_fin_packet(&self, response: &mut [u8]) -> Result<usize, RustTcpError> {
-        debug!("Send FIN packet");
-
-        let mut response = &mut response[..];
-        PacketBuilder::ipv4(self.connection.dest_ip, self.connection.src_ip, 64)
-            .tcp(
-                self.connection.dest_port,
-                self.connection.src_port,
-                self.send.isa,
-                self.recv.window_size,
-            )
-            .ack(self.recv.next)
-            .fin()
-            .write(&mut response, &[])?;
-
-        Ok(etherparse::Ipv4Header::MIN_LEN + etherparse::TcpHeader::MIN_LEN)
     }
 
     pub fn on_read(&mut self, buf: &mut [u8]) -> usize {
@@ -373,8 +253,25 @@ impl TcpTlb {
 
         self.recv_buf.truncate(0);
         self.recv.window_size += n as u16;
-
         n
+    }
+
+    pub fn send_syn(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
+        let n = match self.state {
+            TcpState::Closed => {
+                let n = build_syn_packet(
+                    self.connection,
+                    self.send.isa,
+                    self.recv.window_size,
+                    request,
+                )?;
+                self.state = TcpState::SynSent;
+                n
+            }
+            _ => unimplemented!(),
+        };
+
+        Ok(n)
     }
 
     pub fn on_write(
@@ -398,14 +295,23 @@ impl TcpTlb {
         // Check the maximum data the receiver can receive. 'send_size' can't be more than the sending window size.
         let send_size = cmp::min(remain_size, self.send.window_size as usize);
         let last_packet_index = curr_packet_index + send_size;
-        let packet = &self.send.buf[curr_packet_index..last_packet_index];
+        let data = &self.send.buf[curr_packet_index..last_packet_index];
         let last_buf_index = self.send.buf[curr_packet_index..].len();
 
-        let n = if last_packet_index < last_buf_index {
-            self.build_ack_packet(packet, self.send.next, request)?
+        let build_packet = if last_packet_index < last_buf_index {
+            build_ack_packet
         } else {
-            self.build_push_ack_packet(packet, self.send.next, request)?
+            build_push_ack_packet
         };
+
+        let n = build_packet(
+            self.connection,
+            data,
+            self.send.next,
+            self.recv.next,
+            self.recv.window_size,
+            request,
+        )?;
 
         self.send.next = self.send.next.wrapping_add(send_size as u32);
         remain_size -= send_size;
@@ -423,13 +329,22 @@ impl TcpTlb {
         // Check the maximum data the receiver can receive. 'send_size' can't be more than the sending window size.
         let send_size = cmp::min(remain_size, self.send.window_size as usize);
         let last_packet_index = curr_packet_index + send_size;
-        let packet = &self.send.buf[curr_packet_index..last_packet_index];
+        let data = &self.send.buf[curr_packet_index..last_packet_index];
 
-        let n = if (remain_size - send_size) > 0 {
-            self.build_ack_packet(packet, self.send.acked, request)?
+        let build_packet = if (remain_size - send_size) > 0 {
+            build_ack_packet
         } else {
-            self.build_push_ack_packet(packet, self.send.acked, request)?
+            build_push_ack_packet
         };
+
+        let n = build_packet(
+            self.connection,
+            data,
+            self.send.acked,
+            self.recv.next,
+            self.recv.window_size,
+            request,
+        )?;
 
         match remain_size {
             0 => Ok(WritePacket::LastPacket(n)),

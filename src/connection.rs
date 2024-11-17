@@ -1,3 +1,4 @@
+use crate::packet_build::build_reset_packet;
 use crate::packets::TcpTlb;
 use crate::{errors::RustTcpError, packets::WritePacket};
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
@@ -257,11 +258,9 @@ impl RustTcp {
 
         if entry.is_none() {
             // Use temporary TLB to send Reset packet
-            error!("Connection not found : {:?}", &conn);
+            error!("Connection not found : {:?}", conn);
             dbg!(&self.conns_by_fd);
-            let (_, n) = TcpTlb::new(0, 0)
-                .connection(conn)
-                .on_packet(&tcphdr, payload, response)?;
+            let n = build_reset_packet(conn, &tcphdr, payload.len(), response)?;
             return Ok(n);
         }
 
