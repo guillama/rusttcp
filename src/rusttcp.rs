@@ -50,7 +50,7 @@ pub enum RustTcpMode {
 }
 
 #[derive(Debug)]
-pub enum UserEvent {
+enum UserEvent {
     Close(i32),
     Open(i32),
     Write(i32, Vec<u8>),
@@ -58,7 +58,7 @@ pub enum UserEvent {
 }
 
 #[derive(Debug, Clone)]
-pub enum TimerEvent {
+enum TimerEvent {
     Timeout(i32, Duration),
 }
 
