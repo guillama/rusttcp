@@ -8,54 +8,85 @@ use std::sync::{MutexGuard, PoisonError};
 
 #[derive(Debug)]
 pub enum RustTcpError {
+    /// Error while building a TCP packet.
     PacketBuild(BuildWriteError),
+
+    /// A threading-related error occurred.
     ThreadError,
+
+    /// Connection with the specified file descriptor was not found.
     ConnectionNotFound(i32),
+
+    /// An expected element was not found in the queue.
     ElementNotFound,
+
+    /// Packet has an invalid or unexpected size.
     BadPacketSize(usize),
+
+    /// Invalid IPv4 address encountered.
     BadIpv4Address([u8; 4]),
+
+    /// Unsupported or invalid IPv4 protocol encountered.
     BadIPv4Proto(u8),
+
+    /// Error in parsing or validating an IPv4 header.
     BadIpv4Header,
+
+    /// Error in parsing or validating a TCP header.
     BadTcpHeader,
+
+    /// Invalid or unexpected TCP state encountered.
     BadTcpState,
+
+    /// Unexpected TCP sequence number encountered.
     UnexpectedSeqNum,
+
+    /// Maximum retransmissions for a connection reached.
     MaxRetransmissionsReached(u32),
 }
 
 impl fmt::Display for RustTcpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RustTcpError::PacketBuild(e) => write!(f, "Error: Can't build packet : {}", e),
+            RustTcpError::PacketBuild(e) => write!(f, "error while building a TCP packet : {}", e),
             RustTcpError::ConnectionNotFound(fd) => {
                 write!(
                     f,
-                    "Error: Can't find connection with file descriptor : {}",
+                    "connection with the specified file descriptor was not found : {}",
                     fd
                 )
             }
-            RustTcpError::ElementNotFound => write!(f, "Error: Can't find element"),
-            RustTcpError::BadPacketSize(size) => write!(f, "Error: Bad Packet size : {}", size),
-            RustTcpError::BadIPv4Proto(proto) => write!(f, "Error: Bad Ipv4 Protocol : {}", proto),
+            RustTcpError::ElementNotFound => {
+                write!(f, "An expected element was not found in the queue")
+            }
+            RustTcpError::BadPacketSize(size) => {
+                write!(f, "packet has an invalid or unexpected size : {}", size)
+            }
+            RustTcpError::BadIPv4Proto(proto) => write!(f, "bad Ipv4 Protocol : {}", proto),
             RustTcpError::BadIpv4Address(addr) => {
-                write!(f, "Error: Bad destination address : {:?}", addr)
+                write!(f, "invalid IPv4 address encountered : {:?}", addr)
             }
             RustTcpError::BadIpv4Header => {
-                write!(f, "Error: Bad Ipv4 Header")
+                write!(f, "error in parsing or validating an IPv4 header")
             }
             RustTcpError::BadTcpHeader => {
-                write!(f, "Error: Bad Tcp Header")
+                write!(f, "error in parsing or validating a TCP header")
             }
             RustTcpError::BadTcpState => {
-                write!(f, "Error: Bad Tcp State")
+                write!(f, "invalid or unexpected TCP state encountered")
             }
             RustTcpError::UnexpectedSeqNum => {
-                write!(f, "Error: Unexpected Sequence Number")
+                write!(f, "unexpected TCP sequence number encountered")
             }
             RustTcpError::MaxRetransmissionsReached(value) => {
-                write!(f, "Error: Max retransmissions reached : {}", value)
+                write!(
+                    f,
+                    "maximum retransmissions for a connection reached : {}",
+                    value
+                )
             }
             RustTcpError::ThreadError => {
-                write!(f, "Error: Cannot acquire lock because of thread panic")
+                write!(f, "a threading-related error occurred.")
             }
         }
     }
