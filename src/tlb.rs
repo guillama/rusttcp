@@ -237,7 +237,7 @@ impl TcpTlb {
             TcpState::CloseWait => {
                 self.state = TcpState::LastAck;
                 let n = build_fin_packet(self.connection, self.send.isa, self.recv.next, request)?;
-                return Ok(n);
+                Ok(n)
             }
             _ => unimplemented!(),
         }

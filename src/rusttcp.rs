@@ -150,7 +150,7 @@ impl RustTcp {
         info!("OPEN");
 
         thread_local! {
-            static FD: Cell<i32> = Cell::new(0);
+            static FD: Cell<i32> = const { Cell::new(0) };
         }
 
         let fd = FD.with(|cell| {
@@ -201,7 +201,7 @@ impl RustTcp {
     pub fn write(&mut self, fd: i32, buf: &[u8]) -> Result<usize, RustTcpError> {
         info!("WRITE");
 
-        if self.conns_by_fd.get(&fd).is_none() {
+        if !self.conns_by_fd.contains_key(&fd) {
             return Err(RustTcpError::ConnectionNotFound(fd));
         }
 
@@ -371,7 +371,7 @@ impl RustTcp {
             return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
         }
 
-        let bytes_to_send = match self.tlb_from_connection(fd)?.on_timeout(request)? {
+        let n = match self.tlb_from_connection(fd)?.on_timeout(request)? {
             WritePacket::Packet(n) => {
                 self.user_queue.push_front(UserEvent::WriteNext(fd));
                 n
@@ -384,6 +384,6 @@ impl RustTcp {
         self.timer.lock().unwrap().reset();
         self.tcp_retries += 1;
 
-        return Ok(bytes_to_send);
+        Ok(n)
     }
 }
