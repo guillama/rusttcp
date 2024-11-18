@@ -115,7 +115,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let fin_resp = send_fin_to(&mut server, CLIENT_SEQNUM + 1, &resp_syn);
 
-    let event1 = server.poll().unwrap();
+    let event1 = server.poll();
     server.close(fd);
 
     // Extract the FIN request to close the other half connection
@@ -131,7 +131,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     let response = send_ack_to(&mut server, CLIENT_SEQNUM + 1, &[], ack_seqnum);
     let (_, tcphdr_reset, _) = extract_packet(&response);
 
-    let event2 = server.poll().unwrap();
+    let event2 = server.poll();
 
     assert_eq!(event1, TcpEvent::ConnectionClosing);
     assert_eq!(event2, TcpEvent::ConnectionClosed);
@@ -657,12 +657,12 @@ fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
     let mut response = [0; 1400];
     server.on_packet(&client_packet, &mut response).unwrap();
 
-    let event1 = server.poll().unwrap();
+    let event1 = server.poll();
 
     let mut recv_buf = [0; 1504];
     let read_size = server.read(fd_server, &mut recv_buf).unwrap();
 
-    let event2 = server.poll().unwrap();
+    let event2 = server.poll();
 
     assert_eq!(event1, TcpEvent::DataReceived(data.len()));
     assert_eq!(read_size, data.len());
@@ -689,7 +689,7 @@ fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
     let client_packet1 = process_user_event(&mut client);
     let mut response = [0; 1400];
     server.on_packet(&client_packet1, &mut response).unwrap();
-    let event = server.poll().unwrap();
+    let event = server.poll();
 
     let mut recv_buf = [0; 1504];
     let read_size = server.read(fd_server, &mut recv_buf).unwrap();
@@ -717,7 +717,7 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
 
     let mut server_ack = [0; 1400];
     server.on_packet(&client_packet1, &mut server_ack).unwrap();
-    let _ = server.poll().unwrap();
+    let _ = server.poll();
 
     let mut recv_buf = [0; 1504];
     let read_size1 = server.read(fd_server, &mut recv_buf[0..]).unwrap();
@@ -725,7 +725,7 @@ fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_
     let client_packet2 = process_user_event(&mut client);
     let mut response = [0; 1400];
     server.on_packet(&client_packet2, &mut response).unwrap();
-    let event2 = server.poll().unwrap();
+    let event2 = server.poll();
 
     let read_size2 = server.read(fd_server, &mut recv_buf[read_size1..]).unwrap();
 
@@ -883,7 +883,7 @@ fn server_closes_connection_after_receiving_a_reset_from_client() {
     let mut response = [0; 1400];
     server.on_packet(&reset_packet, &mut response).unwrap();
 
-    let event = server.poll().unwrap();
+    let event = server.poll();
 
     assert_eq!(event, TcpEvent::ConnectionClosed);
 }

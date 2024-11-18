@@ -73,26 +73,24 @@ fn run(tcp_guard: &RustTcpGuard) -> Result<(), RustTcpError> {
     loop {
         {
             let mut tcp = tcp_guard.lock()?;
-            if let Ok(event) = tcp.poll() {
-                match event {
-                    TcpEvent::DataReceived(_) => {
-                        debug!("TcpEvent: DataReceived");
+            match tcp.poll() {
+                TcpEvent::DataReceived(_) => {
+                    debug!("TcpEvent: DataReceived");
 
-                        let mut buf = [0; MAX_BUF_SIZE];
-                        if let Ok(n) = tcp.read(fd, &mut buf) {
-                            info!("read {} bytes : {}", n, str::from_utf8(&buf).unwrap());
-                        }
+                    let mut buf = [0; MAX_BUF_SIZE];
+                    if let Ok(n) = tcp.read(fd, &mut buf) {
+                        info!("read {} bytes : {}", n, str::from_utf8(&buf).unwrap());
                     }
-                    TcpEvent::ConnectionClosing => {
-                        debug!("TcpEvent: ConnectionClosing");
-                        tcp.close(fd)
-                    }
-                    TcpEvent::ConnectionClosed => {
-                        debug!("TcpEvent: ConnectionClosed");
-                        fd = tcp.open(RustTcpMode::Passive(DEFAULT_PORT))?
-                    }
-                    _ => (),
                 }
+                TcpEvent::ConnectionClosing => {
+                    debug!("TcpEvent: ConnectionClosing");
+                    tcp.close(fd)
+                }
+                TcpEvent::ConnectionClosed => {
+                    debug!("TcpEvent: ConnectionClosed");
+                    fd = tcp.open(RustTcpMode::Passive(DEFAULT_PORT))?
+                }
+                _ => (),
             }
         }
 

@@ -210,8 +210,8 @@ impl RustTcp {
         Ok(0)
     }
 
-    pub fn poll(&mut self) -> Result<TcpEvent, RustTcpError> {
-        Ok(self.poll_queue.pop_back().unwrap_or(TcpEvent::NoEvent))
+    pub fn poll(&mut self) -> TcpEvent {
+        self.poll_queue.pop_back().unwrap_or(TcpEvent::NoEvent)
     }
 
     pub fn on_packet(&mut self, packet: &[u8], response: &mut [u8]) -> Result<usize, RustTcpError> {
