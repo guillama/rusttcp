@@ -52,8 +52,9 @@ pub struct TcpTlb {
 }
 
 impl TcpTlb {
-    pub fn new(window_size: u16, isa: u32) -> Self {
+    pub fn new(connection: Connection, window_size: u16, isa: u32) -> Self {
         TcpTlb {
+            connection,
             recv: TcpRecvContext {
                 window_size,
                 ..Default::default()
@@ -66,11 +67,6 @@ impl TcpTlb {
             },
             ..Default::default()
         }
-    }
-
-    pub fn connection(mut self, conn: Connection) -> Self {
-        self.connection = conn;
-        self.clone()
     }
 
     pub fn on_packet(
@@ -225,7 +221,7 @@ impl TcpTlb {
         Ok(())
     }
 
-    pub fn listen(mut self) -> Result<Self, RustTcpError> {
+    pub fn listen(&mut self) -> Result<&mut Self, RustTcpError> {
         match self.state {
             TcpState::Closed => self.state = TcpState::Listen,
             _ => panic!("Unexpected state when opening new connection"),

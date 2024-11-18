@@ -70,7 +70,7 @@ pub struct RustTcp {
 
     conns: HashMap<Connection, TcpTlb>,
     conns_by_fd: HashMap<i32, Connection>,
-    listen_ports: HashMap<u16, (i32, TcpTlb)>,
+    listen_ports: HashMap<u16, i32>,
 
     src_ip: [u8; 4],
     timer: Arc<Mutex<Timer>>,
@@ -147,8 +147,6 @@ impl RustTcp {
     }
 
     pub fn open(&mut self, mode: RustTcpMode) -> Result<i32, RustTcpError> {
-        let tlb = TcpTlb::new(self.default_window_size, self.default_seqnum);
-
         info!("OPEN");
 
         thread_local! {
@@ -164,20 +162,19 @@ impl RustTcp {
         match mode {
             RustTcpMode::Passive(src_port) => {
                 info!("Server listening on port {src_port}...");
-                self.listen_ports.insert(src_port, (fd, tlb.listen()?));
+                self.listen_ports.insert(src_port, fd);
             }
             RustTcpMode::Active(server_ip, server_port) => {
-                let c = Connection {
+                let conn = Connection {
                     src_ip: server_ip,
                     src_port: server_port,
                     dest_ip: self.src_ip,
                     dest_port: RustTcp::DEFAULT_AVAILABLE_PORT,
                 };
-                self.conns.insert(c, tlb.connection(c));
-                self.conns_by_fd.insert(fd, c);
-
-                let usr_event = UserEvent::Open(fd);
-                self.user_queue.push_front(usr_event);
+                let tlb = TcpTlb::new(conn, self.default_window_size, self.default_seqnum);
+                self.conns.insert(conn, tlb);
+                self.conns_by_fd.insert(fd, conn);
+                self.user_queue.push_front(UserEvent::Open(fd));
             }
         }
 
@@ -186,9 +183,7 @@ impl RustTcp {
 
     pub fn close(&mut self, fd: i32) {
         info!("CLOSE");
-
-        let usr_event = UserEvent::Close(fd);
-        self.user_queue.push_front(usr_event);
+        self.user_queue.push_front(UserEvent::Close(fd));
     }
 
     pub fn read(&mut self, fd: i32, buf: &mut [u8]) -> Result<usize, RustTcpError> {
@@ -242,24 +237,19 @@ impl RustTcp {
         }
 
         let entry = self.listen_ports.remove(&tcphdr.destination_port);
-        if let Some((fd, tlb)) = entry {
-            info!(
-                "Server accepted connection on port {}",
-                tcphdr.destination_port
-            );
-            let mut new_tlb: TcpTlb = tlb.connection(conn);
-            let (_, n) = new_tlb.on_packet(&tcphdr, payload, response)?;
+        if let Some(fd) = entry {
+            info!("Connection accepted on port {}", tcphdr.destination_port);
 
-            self.conns.insert(conn, new_tlb);
+            let mut tlb = TcpTlb::new(conn, self.default_window_size, self.default_seqnum);
+            let (_, n) = tlb.listen()?.on_packet(&tcphdr, payload, response)?;
+            self.conns.insert(conn, tlb);
             self.conns_by_fd.insert(fd, conn);
 
             return Ok(n);
         }
 
         if entry.is_none() {
-            // Use temporary TLB to send Reset packet
-            error!("Connection not found : {:?}", conn);
-            dbg!(&self.conns_by_fd);
+            error!("Connection not found: {:?}, {:?}", conn, &self.conns_by_fd);
             let n = build_reset_packet(conn, &tcphdr, payload.len(), response)?;
             return Ok(n);
         }
