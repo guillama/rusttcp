@@ -1,5 +1,5 @@
 use etherparse::{IpNumber, Ipv4Header, PacketBuilder, TcpHeader};
-use rusttcp::connection::*;
+use rusttcp::rusttcp::*;
 
 pub fn receive_syn(rust_tcp: &mut RustTcp, seqnum: u32) -> Vec<u8> {
     let syn_packet = build_syn_packet(seqnum);

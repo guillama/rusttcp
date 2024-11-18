@@ -1,6 +1,6 @@
-use crate::packet_build::build_reset_packet;
-use crate::packets::TcpTlb;
-use crate::{errors::RustTcpError, packets::WritePacket};
+use crate::errors::RustTcpError;
+use crate::packets::build_reset_packet;
+use crate::tlb::{TcpTlb, WritePacket};
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use log::{debug, error, info};
 

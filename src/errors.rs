@@ -1,6 +1,6 @@
 extern crate etherparse;
 
-use crate::connection::RustTcp;
+use crate::rusttcp::RustTcp;
 use etherparse::err::packet::BuildWriteError;
 use std::error::Error;
 use std::fmt;
