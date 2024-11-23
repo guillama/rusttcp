@@ -13,6 +13,32 @@ use log::debug;
 use log::error;
 use log::info;
 
+// Represents the result of a write or retransmission operation.
+//
+// The `WritePacket` enum is used to indicate whether the operation has completed
+// all data transmission or if more packets are pending.
+//
+// # Variants
+// - `LastPacket(usize)`: Indicates the final packet in the sequence, with the number of bytes written.
+// - `Packet(usize)`: Indicates a partial write, with more packets pending; contains the number of bytes written.
+#[derive(Debug)]
+pub enum WritePacket {
+    LastPacket(usize),
+    Packet(usize),
+}
+
+// Represents the various states of a TCP connection.
+//
+// The `TcpState` enum defines the states in the TCP connection lifecycle as per the TCP state machine.
+//
+// # Variants
+// - `Closed`: Indicates that the connection is closed and not active.
+// - `Listen`: Indicates that the connection is waiting for incoming SYN packets to establish a connection.
+// - `SynSent`: The connection has sent a SYN packet and is waiting for a SYN-ACK from the remote endpoint.
+// - `SynReceived`: The connection has received a SYN and sent a SYN-ACK in response.
+// - `Established`: The connection is fully established and ready for data transfer.
+// - `CloseWait`: The connection is waiting to send the final FIN after receiving a FIN from the peer.
+// - `LastAck`: The connection has sent a FIN and is waiting for an acknowledgment from the peer.
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 enum TcpState {
     #[default]
@@ -25,6 +51,7 @@ enum TcpState {
     LastAck,
 }
 
+// Holds the context for managing the TCP receive buffer and window.
 #[derive(Debug, Default, Clone)]
 struct TcpRecvContext {
     isa: u32,
@@ -32,6 +59,7 @@ struct TcpRecvContext {
     window_size: u16,
 }
 
+// Holds the context for managing the TCP send buffer and window.
 #[derive(Debug, Default, Clone)]
 struct TcpSendContext {
     isa: u32,
@@ -42,6 +70,11 @@ struct TcpSendContext {
     packets_index: Vec<usize>,
 }
 
+// Represents the Transmission Control Block (TCB) for a TCP connection.
+//
+// The `TcpTlb` struct stores the state and context required to manage a TCP connection,
+// including its current state, associated connection details, and buffers for sending
+// and receiving data.
 #[derive(Debug, Default, Clone)]
 pub struct TcpTlb {
     state: TcpState,
@@ -52,6 +85,7 @@ pub struct TcpTlb {
 }
 
 impl TcpTlb {
+    // Creates a new `TcpTlb` (Transmission Control Block) instance for a TCP connection.
     pub fn new(connection: Connection, window_size: u16, isa: u32) -> Self {
         TcpTlb {
             connection,
@@ -69,6 +103,15 @@ impl TcpTlb {
         }
     }
 
+    // Processes an incoming TCP packet and updates the connection's state and buffers.
+    //
+    // This method handles TCP packets based on the current state of the connection, including:
+    // - Establishing new connections (e.g., SYN, SYN-ACK).
+    // - Processing data and acknowledgments in an established connection.
+    // - Handling connection termination (e.g., FIN, RST).
+    //
+    // Depending on the packet type and connection state, this method may generate a response
+    // packet and return a corresponding TCP event.
     pub fn on_packet(
         &mut self,
         tcphdr: &TcpHeader,
@@ -221,6 +264,8 @@ impl TcpTlb {
         Ok(())
     }
 
+    // Prepares the TCP connection to listen for incoming connections.
+    // This method transitions the TCP state to `TcpState::Listen`.
     pub fn listen(&mut self) -> Result<&mut Self, RustTcpError> {
         match self.state {
             TcpState::Closed => self.state = TcpState::Listen,
@@ -230,6 +275,10 @@ impl TcpTlb {
         Ok(self)
     }
 
+    // Handles the closing of a TCP connection.
+    //
+    // This method transitions the TCP state to `TcpState::LastAck` and generates a FIN packet
+    // to signal the closing of the connection.
     pub fn on_close(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
         debug!("on_close");
 
@@ -243,6 +292,7 @@ impl TcpTlb {
         }
     }
 
+    // Reads data from the receive buffer.
     pub fn on_read(&mut self, buf: &mut [u8]) -> usize {
         let n = self.recv_buf.len();
         buf[..n].clone_from_slice(&self.recv_buf);
@@ -252,6 +302,10 @@ impl TcpTlb {
         n
     }
 
+    // Initiates a TCP connection by sending a SYN packet.
+    //
+    // This method transitions the connection to the `TcpState::SynSent` state and generates
+    // a SYN packet to initiate the three-way handshake.
     pub fn send_syn(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
         let n = match self.state {
             TcpState::Closed => {
@@ -270,6 +324,12 @@ impl TcpTlb {
         Ok(n)
     }
 
+    // Handles writing data to the TCP connection by building and sending packets.
+    //
+    // This method processes a buffer of outgoing data, generates the appropriate TCP packet(s),
+    // and updates the connection's state to reflect the data being sent. It ensures that
+    // packets respect the sending window size and supports splitting data into multiple packets
+    // if necessary.
     pub fn on_write(
         &mut self,
         buf: &[u8],
@@ -318,6 +378,12 @@ impl TcpTlb {
         }
     }
 
+    // Handles retransmissions on timeout for the TCP connection.
+    //
+    // This method is invoked when a retransmission timeout occurs. It resends the
+    // unacknowledged data from the send buffer as a new TCP packet. The method calculates
+    // the appropriate size for the retransmission based on the receiver's window size and
+    // prepares a packet accordingly.
     pub fn on_timeout(&mut self, request: &mut [u8]) -> Result<WritePacket, RustTcpError> {
         let curr_packet_index = (self.send.acked - self.send.isa) as usize - 1;
         let remain_size = self.send.packets_index.last().unwrap() - curr_packet_index;
@@ -347,9 +413,4 @@ impl TcpTlb {
             _ => Ok(WritePacket::Packet(n)),
         }
     }
-}
-
-pub enum WritePacket {
-    LastPacket(usize),
-    Packet(usize),
 }
