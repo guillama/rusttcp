@@ -30,6 +30,7 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Creates a new `Connection` instance.
     pub fn new(iphdr: &Ipv4Header, tcphdr: &TcpHeader) -> Self {
         Connection {
             src_ip: iphdr.source,
@@ -106,17 +107,6 @@ enum TimerEvent {
 /// The `RustTcp` struct provides comprehensive management for TCP connections,
 /// including tracking events, managing timers, and maintaining metadata for active
 /// and passive connections. It serves as the core structure for a TCP implementation.
-///
-/// # Responsibilities
-///
-/// - **Event Tracking**: Handles user interactions, timer-based events, and TCP-specific
-///   events using dedicated queues.
-/// - **Connection Management**: Maps and tracks active network connections,
-///   including metadata and file descriptor associations.
-/// - **Default Parameters**: Maintains default TCP parameters such as window size,
-///   sequence numbers, and retry counts.
-/// - **Connection Metadata**: Stores and manages data structures related to active
-///   connections and listening ports.
 pub struct RustTcp {
     user_queue: VecDeque<UserEvent>,
     timer_queue: VecDeque<TimerEvent>,
@@ -240,9 +230,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     ///
     /// // Passive mode example
@@ -293,9 +283,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
     ///
@@ -321,9 +311,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
     ///
@@ -360,9 +350,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100], 80)).unwrap();
     ///
@@ -391,9 +381,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 1], 80)).unwrap();
     /// match tcp.poll() {
@@ -431,9 +421,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
     ///
@@ -544,9 +534,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
     ///
@@ -561,7 +551,7 @@ impl RustTcp {
         let n = match event {
             Some(UserEvent::Open(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                tlb.send_syn(request)?
+                tlb.on_open(request)?
             }
             Some(UserEvent::Close(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
@@ -626,9 +616,9 @@ impl RustTcp {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use rusttcp::rusttcp::*;
-    ///
+    /// ```
+    /// # use rusttcp::rusttcp::*;
+    /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
     /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
     ///
