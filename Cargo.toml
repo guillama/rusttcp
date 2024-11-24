@@ -15,7 +15,3 @@ mocks = []
 
 [dev-dependencies]
 rusttcp = { path = ".", features = ["mocks"] }
-
-[[test]]
-name = "integration_tests"
-path = "tests/test.rs"
