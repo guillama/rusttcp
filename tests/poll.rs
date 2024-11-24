@@ -7,8 +7,8 @@ use rusttcp::rusttcp::*;
 fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -40,8 +40,8 @@ fn poll_returns_event_to_the_server_after_client_has_sent_user_data() {
 fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -68,8 +68,8 @@ fn poll_returns_event_to_the_server_after_the_receiving_buffer_has_been_full() {
 fn poll_doesnt_return_event_to_the_server_until_client_has_sent_all_of_his_user_data() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 

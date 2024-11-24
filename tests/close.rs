@@ -7,7 +7,7 @@ use rusttcp::rusttcp::*;
 fn server_sends_a_ack_after_receiving_a_fin_packet() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let _ = server.open(RustTcpMode::Passive(22)).unwrap();
@@ -26,7 +26,7 @@ fn server_sends_a_ack_after_receiving_a_fin_packet() {
 fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_client() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();

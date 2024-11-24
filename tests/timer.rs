@@ -10,11 +10,11 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     const WINDOW_SIZE: u16 = 10;
 
     let fake_timer = Arc::new(Mutex::new(Timer::now()));
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into())
         .timer(fake_timer.clone())
         .tcp_max_retries(5)
         .build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -91,11 +91,11 @@ fn client_resets_its_timer_after_receiving_a_response() {
     const WINDOW_SIZE: u16 = 5;
 
     let fake_timer = Arc::new(Mutex::new(Timer::now()));
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into())
         .timer(fake_timer.clone())
         .tcp_max_retries(5)
         .build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 

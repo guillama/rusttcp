@@ -37,7 +37,7 @@ fn log_init() {
 fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
@@ -69,7 +69,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
 fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
@@ -93,7 +93,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
 fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
@@ -116,7 +116,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
 fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 1;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
@@ -140,7 +140,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
 fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     const CLIENT_SEQNUM: u32 = MAX - 5;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
     let fd = server.open(RustTcpMode::Passive(22)).unwrap();
@@ -167,8 +167,8 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
 
 #[test]
 fn send_user_data_with_length_within_the_window_size() {
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
 
@@ -196,10 +196,10 @@ fn send_user_data_with_length_bigger_than_the_window_size() {
     const WINDOW_SIZE: u16 = 5;
     const CLIENT_SEQNUM: u32 = 500;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into())
         .sequence_number(CLIENT_SEQNUM)
         .build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -238,10 +238,10 @@ fn send_several_user_data_within_the_window_size() {
     const WINDOW_SIZE: u16 = 5;
     const CLIENT_SEQNUM: u32 = 20;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into())
         .sequence_number(CLIENT_SEQNUM)
         .build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -280,8 +280,8 @@ fn send_several_user_data_within_the_window_size() {
 fn send_several_user_data_with_length_bigger_than_the_window_size() {
     const WINDOW_SIZE: u16 = 5;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -321,8 +321,8 @@ fn send_several_user_data_with_length_bigger_than_the_window_size() {
 fn server_window_size_is_updated_after_receiving_data() {
     const WINDOW_SIZE: u16 = 10;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 
@@ -346,8 +346,8 @@ fn server_window_size_is_updated_after_receiving_data() {
 fn server_window_size_is_updated_after_receiving_data_length_equal_to_window_size() {
     const WINDOW_SIZE: u16 = 5;
 
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1]).build();
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(WINDOW_SIZE)
         .build();
 

@@ -232,7 +232,7 @@ pub fn open_and_handshake(
     let mut client_ack = [0; 1400];
 
     let fd_client = client
-        .open(RustTcpMode::Active([192, 168, 1, 2], 22))
+        .open(RustTcpMode::Active([192, 168, 1, 2].into(), 22))
         .unwrap();
     let fd_server = server.open(RustTcpMode::Passive(22)).unwrap();
 

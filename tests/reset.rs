@@ -7,7 +7,7 @@ use rusttcp::rusttcp::*;
 fn send_reset_when_receiving_ack_packet_on_closed_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
 
     // No call to open() -> so connection is closed
 
@@ -31,7 +31,7 @@ fn send_reset_when_receiving_ack_packet_on_closed_connection() {
 fn send_reset_when_receiving_packet_on_closed_connection() {
     const CLIENT_SEQNUM: u32 = 100;
 
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
 
     // No call to open()
 
@@ -49,7 +49,7 @@ fn send_reset_when_receiving_packet_on_closed_connection() {
 
 #[test]
 fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
     let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 101;
@@ -65,7 +65,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
 
 #[test]
 fn send_reset_when_receiving_bad_ack_during_handshake() {
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
     let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
@@ -83,7 +83,7 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
 
 #[test]
 fn send_reset_when_receiving_bad_syn_during_handshake() {
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
     let _ = server.open(RustTcpMode::Passive(22)).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
@@ -98,11 +98,11 @@ fn send_reset_when_receiving_bad_syn_during_handshake() {
 
 #[test]
 fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
-    let mut client = RustTcpBuilder::new([192, 168, 1, 1])
+    let mut client = RustTcpBuilder::new([192, 168, 1, 1].into())
         .sequence_number(100)
         .build();
     let _ = client
-        .open(RustTcpMode::Active([192, 168, 1, 2], 22))
+        .open(RustTcpMode::Active([192, 168, 1, 2].into(), 22))
         .unwrap();
 
     let _ = process_user_event(&mut client);
@@ -119,7 +119,7 @@ fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
 
 #[test]
 fn server_closes_connection_after_receiving_a_reset_from_client() {
-    let mut server = RustTcpBuilder::new([192, 168, 1, 2]).build();
+    let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
     let _ = server.open(RustTcpMode::Passive(22));
 
     // 3-way handshake

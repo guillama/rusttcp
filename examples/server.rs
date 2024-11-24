@@ -64,9 +64,7 @@ fn main() {
         host_ipaddr, iface_ipaddr
     );
 
-    let tcp_guard = Arc::new(Mutex::new(
-        RustTcpBuilder::new(host_ipaddr.octets()).build(),
-    ));
+    let tcp_guard = Arc::new(Mutex::new(RustTcpBuilder::new(host_ipaddr).build()));
     let mut tcp_thread = Arc::clone(&tcp_guard);
     thread::spawn(move || read(&mut tcp_thread, iface_ipaddr, host_ipaddr));
 

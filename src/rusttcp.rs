@@ -9,6 +9,7 @@ use crate::fake_timer::Timer;
 #[cfg(not(feature = "mocks"))]
 use crate::timer::Timer;
 
+use std::net::Ipv4Addr;
 use std::{
     cell::Cell,
     collections::{hash_map::Entry, HashMap, VecDeque},
@@ -88,7 +89,7 @@ pub enum RustTcpMode {
     /// A passive open request, where the process listens for incoming connections on the specified port.
     Passive(u16),
     /// An active open request, where the process initiates a connection to a remote endpoint.
-    Active([u8; 4], u16),
+    Active(Ipv4Addr, u16),
 }
 
 #[derive(Debug)]
@@ -140,10 +141,10 @@ pub struct RustTcpBuilder {
 
 impl RustTcpBuilder {
     /// Creates a new instance of `RustTcpBuilder` with the specified source IP address.
-    pub fn new(src_ip: [u8; 4]) -> Self {
+    pub fn new(src_ip: Ipv4Addr) -> Self {
         RustTcpBuilder {
             window_size: RustTcp::DEFAULT_WINDOW_SIZE,
-            src_ip,
+            src_ip: src_ip.octets(),
             ..Default::default()
         }
     }
@@ -208,9 +209,9 @@ impl RustTcp {
     pub const DEFAULT_WINDOW_SIZE: u16 = 1400;
 
     /// Creates a new `RustTcp` instance with default configuration.
-    pub fn new(src_ip: [u8; 4]) -> Self {
+    pub fn new(src_ip: Ipv4Addr) -> Self {
         RustTcp {
-            src_ip,
+            src_ip: src_ip.octets(),
             tcp_max_retries: RustTcp::TCP_RETRIES_NB_DEFAULT,
             default_window_size: RustTcp::DEFAULT_WINDOW_SIZE,
             ..Default::default()
@@ -236,13 +237,13 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     ///
     /// // Passive mode example
     /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
     ///
     /// // Active mode example
-    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100], 80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100].into(), 80)).unwrap();
     /// ```
     pub fn open(&mut self, mode: RustTcpMode) -> Result<FileDescriptor, RustTcpError> {
         info!("OPEN");
@@ -264,7 +265,7 @@ impl RustTcp {
             }
             RustTcpMode::Active(server_ip, server_port) => {
                 let conn = Connection {
-                    src_ip: server_ip,
+                    src_ip: server_ip.octets(),
                     src_port: server_port,
                     dest_ip: self.src_ip,
                     dest_port: RustTcp::DEFAULT_AVAILABLE_PORT,
@@ -289,7 +290,7 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
     ///
     /// tcp.close(fd);
@@ -317,7 +318,7 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
     ///
     /// let mut buffer = [0u8; 1024];
@@ -356,8 +357,8 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
-    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100], 80)).unwrap();
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
+    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100].into(), 80)).unwrap();
     ///
     /// let data = b"Hello, server!";
     /// match tcp.write(fd, data) {
@@ -387,8 +388,8 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
-    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 1], 80)).unwrap();
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
+    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 1].into(), 80)).unwrap();
     /// match tcp.poll() {
     ///     TcpEvent::NoEvent => println!("No events to process."),
     ///     event => println!("Processing event: {:?}", event),
@@ -427,7 +428,7 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
     ///
     /// let incoming_packet = [/* raw TCP packet data */];
@@ -540,7 +541,7 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
     ///
     /// let mut buffer = [0u8; 1500];
@@ -622,7 +623,7 @@ impl RustTcp {
     /// ```
     /// # use rusttcp::rusttcp::*;
     /// #
-    /// let mut tcp = RustTcp::new([192, 168, 1, 1]);
+    /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
     ///
     /// // Assume a timer event is already queued
