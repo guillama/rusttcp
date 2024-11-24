@@ -1,3 +1,9 @@
+//! # RustTCP with TUN Interface
+//!
+//! This program implements a TCP stack using the RustTCP library, integrating it with a TUN interface.
+//! It provides a simple, event-driven TCP implementation for handling connections and data transfer
+//! between a host and a network interface.
+
 extern crate tun;
 
 use core::str;
@@ -12,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::{thread, time};
 use tun::Device;
 
-const MAX_BUF_SIZE: usize = 1400;
+const MAX_BUF_SIZE: usize = 8 * 1024;
 const DEFAULT_PORT: u16 = 8888;
 const HOST_NETMASK: (u8, u8, u8, u8) = (255, 255, 255, 255);
 const DEFAULT_THREAD_SLEEP_MS: u64 = 10;
