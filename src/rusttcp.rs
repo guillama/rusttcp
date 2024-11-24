@@ -16,6 +16,9 @@ use std::{
     time::Duration,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FileDescriptor(i32);
+
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Default, Debug)]
 /// Represents a connection between two processes, identified by a pair of sockets.
 ///
@@ -90,15 +93,15 @@ pub enum RustTcpMode {
 
 #[derive(Debug)]
 enum UserEvent {
-    Close(i32),
-    Open(i32),
-    Write(i32, Vec<u8>),
-    WriteNext(i32),
+    Close(FileDescriptor),
+    Open(FileDescriptor),
+    Write(FileDescriptor, Vec<u8>),
+    WriteNext(FileDescriptor),
 }
 
 #[derive(Debug, Clone)]
 enum TimerEvent {
-    Timeout(i32, Duration),
+    Timeout(FileDescriptor, Duration),
 }
 
 #[derive(Default, Debug)]
@@ -113,8 +116,8 @@ pub struct RustTcp {
     poll_queue: VecDeque<TcpEvent>,
 
     conns: HashMap<Connection, TcpTlb>,
-    conns_by_fd: HashMap<i32, Connection>,
-    listen_ports: HashMap<u16, i32>,
+    conns_by_fd: HashMap<FileDescriptor, Connection>,
+    listen_ports: HashMap<u16, FileDescriptor>,
 
     src_ip: [u8; 4],
     timer: Arc<Mutex<Timer>>,
@@ -225,7 +228,7 @@ impl RustTcp {
     ///   or active mode.
     ///
     /// # Returns
-    /// - `Ok(i32)`: The file descriptor (`fd`) assigned to the connection on success.
+    /// - `Ok(FileDescriptor)`: The file descriptor (`fd`) assigned to the connection on success.
     /// - `Err(RustTcpError)`: An error if the connection cannot be opened.
     ///
     /// # Example
@@ -241,16 +244,16 @@ impl RustTcp {
     /// // Active mode example
     /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100], 80)).unwrap();
     /// ```
-    pub fn open(&mut self, mode: RustTcpMode) -> Result<i32, RustTcpError> {
+    pub fn open(&mut self, mode: RustTcpMode) -> Result<FileDescriptor, RustTcpError> {
         info!("OPEN");
 
         thread_local! {
-            static FD: Cell<i32> = const { Cell::new(0) };
+            static FD: Cell<FileDescriptor> = const { Cell::new(FileDescriptor(0)) };
         }
 
         let fd = FD.with(|cell| {
             let fd = cell.get();
-            cell.set(fd + 1);
+            cell.set(FileDescriptor(fd.0 + 1));
             fd
         });
 
@@ -279,7 +282,7 @@ impl RustTcp {
     /// Closes an existing TCP connection.
     ///
     /// # Parameters
-    /// - `fd`: An `i32` representing the file descriptor of the connection to close.
+    /// - `fd`: An `FileDescriptor` representing the file descriptor of the connection to close.
     ///
     /// # Example
     ///
@@ -291,7 +294,7 @@ impl RustTcp {
     ///
     /// tcp.close(fd);
     /// ```
-    pub fn close(&mut self, fd: i32) {
+    pub fn close(&mut self, fd: FileDescriptor) {
         info!("CLOSE");
         self.user_queue.push_front(UserEvent::Close(fd));
     }
@@ -299,7 +302,7 @@ impl RustTcp {
     /// Reads data from a TCP connection associated with the specified file descriptor.
     ///
     /// # Parameters
-    /// - `fd`: An `i32` representing the file descriptor of the connection to read from.
+    /// - `fd`: An `FileDescriptor` representing the file descriptor of the connection to read from.
     /// - `buf`: A mutable slice where the read data will be stored.
     ///
     /// # Returns
@@ -323,7 +326,7 @@ impl RustTcp {
     ///     Err(e) => println!("Failed to read: {:?}", e),
     /// }
     /// ```
-    pub fn read(&mut self, fd: i32, buf: &mut [u8]) -> Result<usize, RustTcpError> {
+    pub fn read(&mut self, fd: FileDescriptor, buf: &mut [u8]) -> Result<usize, RustTcpError> {
         info!("READ");
 
         if let Some(c) = self.conns_by_fd.get(&fd) {
@@ -338,7 +341,7 @@ impl RustTcp {
     /// Writes data to a TCP connection associated with the specified file descriptor.
     ///
     /// # Parameters
-    /// - `fd`: An `i32` representing the file descriptor of the connection to write to.
+    /// - `fd`: An `FileDescriptor` representing the file descriptor of the connection to write to.
     /// - `buf`: A slice containing the data to be written.
     ///
     /// # Returns
@@ -362,7 +365,7 @@ impl RustTcp {
     ///     Err(e) => println!("Failed to write: {:?}", e),
     /// }
     /// ```
-    pub fn write(&mut self, fd: i32, buf: &[u8]) -> Result<usize, RustTcpError> {
+    pub fn write(&mut self, fd: FileDescriptor, buf: &[u8]) -> Result<usize, RustTcpError> {
         info!("WRITE");
 
         if !self.conns_by_fd.contains_key(&fd) {
@@ -591,7 +594,7 @@ impl RustTcp {
         Ok(n)
     }
 
-    fn tlb_from_connection(&mut self, fd: i32) -> Result<&mut TcpTlb, RustTcpError> {
+    fn tlb_from_connection(&mut self, fd: FileDescriptor) -> Result<&mut TcpTlb, RustTcpError> {
         if let Some(c) = self.conns_by_fd.get_mut(&fd) {
             if let Some(tlb) = self.conns.get_mut(c) {
                 return Ok(tlb);

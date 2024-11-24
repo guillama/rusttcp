@@ -1,6 +1,6 @@
 extern crate etherparse;
 
-use crate::rusttcp::RustTcp;
+use crate::rusttcp::{FileDescriptor, RustTcp};
 use etherparse::err::packet::BuildWriteError;
 use std::error::Error;
 use std::fmt;
@@ -15,7 +15,7 @@ pub enum RustTcpError {
     ThreadError,
 
     /// Connection with the specified file descriptor was not found.
-    ConnectionNotFound(i32),
+    ConnectionNotFound(FileDescriptor),
 
     /// An expected element was not found in the queue.
     ElementNotFound,
@@ -52,7 +52,7 @@ impl fmt::Display for RustTcpError {
             RustTcpError::ConnectionNotFound(fd) => {
                 write!(
                     f,
-                    "connection with the specified file descriptor was not found : {}",
+                    "connection with the specified file descriptor was not found : {:?}",
                     fd
                 )
             }

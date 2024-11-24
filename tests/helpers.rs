@@ -223,7 +223,10 @@ pub fn on_packet_event_with_extract(
     (iphdr, tcphdr, payload.to_vec())
 }
 
-pub fn open_and_handshake(client: &mut RustTcp, server: &mut RustTcp) -> (i32, i32, u32) {
+pub fn open_and_handshake(
+    client: &mut RustTcp,
+    server: &mut RustTcp,
+) -> (FileDescriptor, FileDescriptor, u32) {
     let mut syn_request = [0; 1400];
     let mut syn_ack_resp = [0; 1400];
     let mut client_ack = [0; 1400];
