@@ -40,7 +40,7 @@ fn send_second_packet_with_same_sequence_number_is_not_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[1, 2, 3];
@@ -72,7 +72,7 @@ fn send_packet_with_sequence_number_higher_than_the_receive_window_is_not_acknow
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let ack_seqnum = seqnum_from(&resp_syn) + 1;
@@ -96,7 +96,7 @@ fn send_packet_bigger_than_the_receive_window_is_not_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let data = &[0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB];
@@ -119,7 +119,7 @@ fn send_data_with_max_u32_sequence_number_is_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
 
@@ -143,7 +143,7 @@ fn send_data_with_wrapped_sequence_number_is_acknowledged() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
 

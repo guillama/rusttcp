@@ -10,7 +10,7 @@ use core::str;
 use env_logger::Builder;
 use log::{debug, error, info, LevelFilter};
 use rusttcp::errors::RustTcpError;
-use rusttcp::rusttcp::{RustTcp, RustTcpBuilder, RustTcpMode, TcpEvent};
+use rusttcp::rusttcp::{PortNumber, RustTcp, RustTcpBuilder, RustTcpMode, TcpEvent};
 use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::path::Path;
@@ -19,7 +19,7 @@ use std::{thread, time};
 use tun::Device;
 
 const MAX_BUF_SIZE: usize = 8 * 1024;
-const DEFAULT_PORT: u16 = 8888;
+const DEFAULT_PORT: PortNumber = PortNumber(8888);
 const HOST_NETMASK: (u8, u8, u8, u8) = (255, 255, 255, 255);
 const DEFAULT_THREAD_SLEEP_MS: u64 = 10;
 const MAX_PROGRAM_ARGS: usize = 3;

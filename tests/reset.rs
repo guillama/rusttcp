@@ -50,7 +50,7 @@ fn send_reset_when_receiving_packet_on_closed_connection() {
 #[test]
 fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     const CLIENT_SEQNUM: u32 = 101;
     let response_syn = receive_syn(&mut server, CLIENT_SEQNUM);
@@ -66,7 +66,7 @@ fn send_reset_when_receiving_bad_ack_seqnum_during_handshake() {
 #[test]
 fn send_reset_when_receiving_bad_ack_during_handshake() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let _ = receive_syn(&mut server, CLIENT_SEQNUM + 1);
@@ -84,7 +84,7 @@ fn send_reset_when_receiving_bad_ack_during_handshake() {
 #[test]
 fn send_reset_when_receiving_bad_syn_during_handshake() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let (_, tcphdr, _) = send_ack_with_extract_to(&mut server, CLIENT_SEQNUM + 1, &[], 42);
@@ -102,7 +102,7 @@ fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
         .sequence_number(100)
         .build();
     let _ = client
-        .open(RustTcpMode::Active([192, 168, 1, 2].into(), 22))
+        .open(RustTcpMode::Active([192, 168, 1, 2].into(), PortNumber(22)))
         .unwrap();
 
     let _ = process_user_event(&mut client);
@@ -120,7 +120,7 @@ fn send_reset_packet_after_receiving_ack_instead_of_syn_ack_packet() {
 #[test]
 fn server_closes_connection_after_receiving_a_reset_from_client() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
-    let _ = server.open(RustTcpMode::Passive(22));
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22)));
 
     // 3-way handshake
     let _ = do_server_handshake(&mut server, 100);

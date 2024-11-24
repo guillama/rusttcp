@@ -7,7 +7,7 @@ use rusttcp::rusttcp::*;
 #[test]
 fn send_syn_ack_with_correct_flags_and_seqnums_after_receiving_syn_packet() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     const CLIENT_SEQNUM: u32 = 100;
     let response = receive_syn(&mut server, CLIENT_SEQNUM);
@@ -30,7 +30,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     // Send SYN packet
     const CLIENT_SEQNUM: u32 = 100;
@@ -57,7 +57,7 @@ fn send_ack_with_correct_seqnum_after_a_3way_handshake_and_receiving_data() {
 fn send_syn_packet_on_opening_active_connection() {
     let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
     let _ = client
-        .open(RustTcpMode::Active([192, 168, 1, 2].into(), 22))
+        .open(RustTcpMode::Active([192, 168, 1, 2].into(), PortNumber(22)))
         .unwrap();
 
     let (iphdr, tcphdr, payload, _) = process_user_event_with_extract(&mut client);
@@ -76,9 +76,9 @@ fn send_ack_packet_after_receiving_syn_ack_packet() {
     let mut client = RustTcpBuilder::new([192, 168, 1, 1].into()).build();
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into()).build();
     let _ = client
-        .open(RustTcpMode::Active([192, 168, 1, 2].into(), 22))
+        .open(RustTcpMode::Active([192, 168, 1, 2].into(), PortNumber(22)))
         .unwrap();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let syn_request = process_user_event(&mut client);
     let syn_ack_resp = on_packet_event(&mut server, &syn_request);

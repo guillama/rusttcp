@@ -20,6 +20,9 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FileDescriptor(i32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PortNumber(pub u16);
+
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Default, Debug)]
 /// Represents a connection between two processes, identified by a pair of sockets.
 ///
@@ -87,9 +90,9 @@ pub enum TcpEvent {
 ///
 pub enum RustTcpMode {
     /// A passive open request, where the process listens for incoming connections on the specified port.
-    Passive(u16),
+    Passive(PortNumber),
     /// An active open request, where the process initiates a connection to a remote endpoint.
-    Active(Ipv4Addr, u16),
+    Active(Ipv4Addr, PortNumber),
 }
 
 #[derive(Debug)]
@@ -118,7 +121,7 @@ pub struct RustTcp {
 
     conns: HashMap<Connection, TcpTlb>,
     conns_by_fd: HashMap<FileDescriptor, Connection>,
-    listen_ports: HashMap<u16, FileDescriptor>,
+    listen_ports: HashMap<PortNumber, FileDescriptor>,
 
     src_ip: [u8; 4],
     timer: Arc<Mutex<Timer>>,
@@ -205,7 +208,7 @@ impl RustTcpBuilder {
 impl RustTcp {
     const TCP_RETRIES_DEFAULT: Duration = Duration::from_millis(200);
     const TCP_RETRIES_NB_DEFAULT: u32 = 15;
-    const DEFAULT_AVAILABLE_PORT: u16 = 36000;
+    const DEFAULT_AVAILABLE_PORT: PortNumber = PortNumber(36000);
     pub const DEFAULT_WINDOW_SIZE: u16 = 1400;
 
     /// Creates a new `RustTcp` instance with default configuration.
@@ -240,10 +243,10 @@ impl RustTcp {
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
     ///
     /// // Passive mode example
-    /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Passive(PortNumber(8080))).unwrap();
     ///
     /// // Active mode example
-    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100].into(), 80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100].into(), PortNumber(80))).unwrap();
     /// ```
     pub fn open(&mut self, mode: RustTcpMode) -> Result<FileDescriptor, RustTcpError> {
         info!("OPEN");
@@ -260,15 +263,15 @@ impl RustTcp {
 
         match mode {
             RustTcpMode::Passive(src_port) => {
-                info!("Server listening on port {src_port}...");
+                info!("Server listening on port {src_port:?}...");
                 self.listen_ports.insert(src_port, fd);
             }
             RustTcpMode::Active(server_ip, server_port) => {
                 let conn = Connection {
                     src_ip: server_ip.octets(),
-                    src_port: server_port,
+                    src_port: server_port.0,
                     dest_ip: self.src_ip,
-                    dest_port: RustTcp::DEFAULT_AVAILABLE_PORT,
+                    dest_port: RustTcp::DEFAULT_AVAILABLE_PORT.0,
                 };
                 let tlb = TcpTlb::new(conn, self.default_window_size, self.default_seqnum);
                 self.conns.insert(conn, tlb);
@@ -291,7 +294,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Passive(PortNumber(8888))).unwrap();
     ///
     /// tcp.close(fd);
     /// ```
@@ -319,7 +322,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Passive(8080)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Passive(PortNumber(8888))).unwrap();
     ///
     /// let mut buffer = [0u8; 1024];
     /// match tcp.read(fd, &mut buffer) {
@@ -358,7 +361,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100].into(), 80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 100].into(), PortNumber(80))).unwrap();
     ///
     /// let data = b"Hello, server!";
     /// match tcp.write(fd, data) {
@@ -389,7 +392,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 1].into(), 80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Active([192, 168, 1, 1].into(), PortNumber(80))).unwrap();
     /// match tcp.poll() {
     ///     TcpEvent::NoEvent => println!("No events to process."),
     ///     event => println!("Processing event: {:?}", event),
@@ -429,7 +432,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Passive(PortNumber(80))).unwrap();
     ///
     /// let incoming_packet = [/* raw TCP packet data */];
     /// let mut response = [0u8; 1500];
@@ -461,7 +464,8 @@ impl RustTcp {
             return Ok(n);
         }
 
-        let entry = self.listen_ports.remove(&tcphdr.destination_port);
+        let port = PortNumber(tcphdr.destination_port);
+        let entry = self.listen_ports.remove(&port);
         if let Some(fd) = entry {
             info!("Connection accepted on port {}", tcphdr.destination_port);
 
@@ -542,7 +546,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Passive(PortNumber(80))).unwrap();
     ///
     /// let mut buffer = [0u8; 1500];
     /// match tcp.on_user_event(&mut buffer) {
@@ -624,7 +628,7 @@ impl RustTcp {
     /// # use rusttcp::rusttcp::*;
     /// #
     /// let mut tcp = RustTcp::new([192, 168, 1, 1].into());
-    /// let fd = tcp.open(RustTcpMode::Passive(80)).unwrap();
+    /// let fd = tcp.open(RustTcpMode::Passive(PortNumber(8888))).unwrap();
     ///
     /// // Assume a timer event is already queued
     /// let mut buffer = [0u8; 1500];

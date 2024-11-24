@@ -10,7 +10,7 @@ fn server_sends_a_ack_after_receiving_a_fin_packet() {
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let _ = server.open(RustTcpMode::Passive(22)).unwrap();
+    let _ = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let response_fin = send_fin_to(&mut server, CLIENT_SEQNUM, &resp_syn);
@@ -29,7 +29,7 @@ fn server_send_fin_packet_then_close_connection_after_receiving_fin_packet_from_
     let mut server = RustTcpBuilder::new([192, 168, 1, 2].into())
         .window_size(10)
         .build();
-    let fd = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     let resp_syn = do_server_handshake(&mut server, CLIENT_SEQNUM);
     let fin_resp = send_fin_to(&mut server, CLIENT_SEQNUM + 1, &resp_syn);

@@ -232,9 +232,9 @@ pub fn open_and_handshake(
     let mut client_ack = [0; 1400];
 
     let fd_client = client
-        .open(RustTcpMode::Active([192, 168, 1, 2].into(), 22))
+        .open(RustTcpMode::Active([192, 168, 1, 2].into(), PortNumber(22)))
         .unwrap();
-    let fd_server = server.open(RustTcpMode::Passive(22)).unwrap();
+    let fd_server = server.open(RustTcpMode::Passive(PortNumber(22))).unwrap();
 
     client.on_user_event(&mut syn_request).unwrap();
     server.on_packet(&syn_request, &mut syn_ack_resp).unwrap();
