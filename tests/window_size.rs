@@ -177,12 +177,13 @@ fn send_user_data_with_length_within_the_window_size() {
 
     // Send data
     let data = &[1, 2, 3, 4, 5, 6];
-    client.write(fd_client, data).unwrap();
+    let written_data_size = client.write(fd_client, data).unwrap();
 
     let (iphdr, tcphdr, payload, _) = process_user_event_with_extract(&mut client);
     let payload_len = TcpHeader::MIN_LEN + data.len();
     let expected_iphdr = build_ipv4_header([192, 168, 1, 1], [192, 168, 1, 2], payload_len);
 
+    assert_eq!(written_data_size, data.len());
     assert_eq!(iphdr, expected_iphdr);
     assert_eq!(payload, &[1, 2, 3, 4, 5, 6]);
     assert_eq!(tcphdr.ack, true);

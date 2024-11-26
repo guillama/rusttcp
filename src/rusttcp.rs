@@ -378,7 +378,8 @@ impl RustTcp {
 
         let usr_event = UserEvent::Write(fd, buf.to_vec());
         self.user_queue.push_back(usr_event);
-        Ok(0)
+
+        Ok(buf.len())
     }
 
     /// Retrieves the next event from the TCP layer.
