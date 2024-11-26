@@ -555,16 +555,16 @@ impl RustTcp {
     ///     Err(e) => println!("Failed to process user event: {:?}", e),
     /// }
     /// ```
-    pub fn on_user_event(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
+    pub fn on_user_event(&mut self, packet: &mut [u8]) -> Result<usize, RustTcpError> {
         let event: Option<UserEvent> = self.user_queue.pop_front();
         let n = match event {
             Some(UserEvent::Open(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                tlb.on_open(request)?
+                tlb.on_open(packet)?
             }
             Some(UserEvent::Close(fd)) => {
                 let tlb = self.tlb_from_connection(fd)?;
-                let n = tlb.on_close(request)?;
+                let n = tlb.on_close(packet)?;
                 self.conns_by_fd.remove(&fd);
                 n
             }
@@ -573,7 +573,7 @@ impl RustTcp {
                     .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
 
                 let tlb = self.tlb_from_connection(fd)?;
-                match tlb.on_write(&user_buf, request)? {
+                match tlb.on_write(&user_buf, packet)? {
                     WritePacket::Packet(n) => {
                         self.user_queue.push_front(UserEvent::WriteNext(fd));
                         n
@@ -586,7 +586,7 @@ impl RustTcp {
                     .push_front(TimerEvent::Timeout(fd, RustTcp::TCP_RETRIES_DEFAULT));
 
                 let tlb = self.tlb_from_connection(fd)?;
-                match tlb.on_write(&[], request)? {
+                match tlb.on_write(&[], packet)? {
                     WritePacket::Packet(n) => {
                         self.user_queue.push_front(UserEvent::WriteNext(fd));
                         n
@@ -638,7 +638,7 @@ impl RustTcp {
     ///     Err(e) => println!("Failed to handle timer event: {:?}", e),
     /// }
     /// ```
-    pub fn on_timer_event(&mut self, request: &mut [u8]) -> Result<usize, RustTcpError> {
+    pub fn on_timer_event(&mut self, packet: &mut [u8]) -> Result<usize, RustTcpError> {
         let (fd, duration) =
             if let Some(TimerEvent::Timeout(n, duration)) = self.timer_queue.front() {
                 (*n, *duration)
@@ -661,7 +661,7 @@ impl RustTcp {
             return Err(RustTcpError::MaxRetransmissionsReached(self.tcp_retries));
         }
 
-        let n = match self.tlb_from_connection(fd)?.on_timeout(request)? {
+        let n = match self.tlb_from_connection(fd)?.on_timeout(packet)? {
             WritePacket::Packet(n) => {
                 self.user_queue.push_front(UserEvent::WriteNext(fd));
                 n

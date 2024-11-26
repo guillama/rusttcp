@@ -25,6 +25,8 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
     let data = &[1, 2, 3, 4, 5];
     client.write(fd_client, data).unwrap();
     let client_packet1 = process_user_event(&mut client);
+    dbg!(&client_packet1);
+    dbg!(&client_packet1.len());
 
     fake_timer.lock().unwrap().add_millisecs(199);
     let client_packet_not_retransmitted = process_timeout_event(&mut client);
@@ -34,6 +36,7 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
 
     fake_timer.lock().unwrap().add_millisecs(399);
     let client_packet_not_retransmitted1 = process_timeout_event(&mut client);
+    dbg!(&client_packet_not_retransmitted1);
 
     fake_timer.lock().unwrap().add_millisecs(1); // timeout +400ms
     let client_packet_retransmitted2 = process_timeout_event(&mut client);
@@ -49,20 +52,15 @@ fn client_retransmits_data_by_doubling_the_timeout_between_successive_retransmis
 
     fake_timer.lock().unwrap().add_millisecs(1); // timeout +1600ms
     let client_packet_retransmitted4 = process_timeout_event(&mut client);
-    dbg!(line!());
 
     fake_timer.lock().unwrap().add_millisecs(3199);
     let client_packet_not_retransmitted4 = process_timeout_event(&mut client);
-    dbg!(line!());
 
     fake_timer.lock().unwrap().add_millisecs(1); // timeout +3200ms
     let client_packet_retransmitted5 = process_timeout_event(&mut client);
 
-    dbg!(line!());
     fake_timer.lock().unwrap().add_millisecs(6400); // timeout +6400ms
     let client_packet_retransmitted6 = process_timeout_event(&mut client);
-
-    dbg!(line!());
 
     // Check that the connection has been removed
     client.write(fd_client, data).unwrap_err();
