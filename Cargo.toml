@@ -2,6 +2,10 @@
 name = "rusttcp"
 version = "0.1.0"
 edition = "2021"
+description = "A TCP implementation in Rust"
+readme = "README.md"
+authors = ["Maxime Guillard <guillama.git@gmail.com>"]
+keywords = ["tcp", "stack", "network"]
 
 [dependencies]
 tun = "0.6.1"
