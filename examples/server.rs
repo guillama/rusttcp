@@ -135,24 +135,20 @@ fn run_read(tcp: &mut RustTcpGuard, mut iface: IfaceDevice) -> Result<(), RustTc
     let mut packet = [0; MAX_BUF_SIZE];
 
     loop {
-        if let Ok(n) = tcp.lock()?.on_user_event(&mut packet[TUN_HEADER_SIZE..]) {
-            if n > 0 {
-                if let Err(e) = iface.write(&mut packet[..TUN_HEADER_SIZE + n]) {
-                    error!("Error: write failed : {:?}", e);
-                } else {
-                    info!("write {} to the TUN interface", TUN_HEADER_SIZE + n);
-                }
-            }
+        match tcp.lock()?.on_timer_event(&mut packet[TUN_HEADER_SIZE..]) {
+            Ok(n) if n > 0 => match iface.write(&mut packet[..TUN_HEADER_SIZE + n]) {
+                Ok(n) => info!("write {} to the TUN interface", TUN_HEADER_SIZE + n),
+                Err(e) => error!("Error: write failed : {:?}", e),
+            },
+            _ => (),
         }
 
-        if let Ok(n) = tcp.lock()?.on_timer_event(&mut packet[TUN_HEADER_SIZE..]) {
-            if n > 0 {
-                if let Err(e) = iface.write(&mut packet[..TUN_HEADER_SIZE + n]) {
-                    error!("Error: write failed : {:?}", e);
-                } else {
-                    info!("write {} to the TUN interface", TUN_HEADER_SIZE + n);
-                }
-            }
+        match tcp.lock()?.on_user_event(&mut packet[TUN_HEADER_SIZE..]) {
+            Ok(n) if n > 0 => match iface.write(&mut packet[..TUN_HEADER_SIZE + n]) {
+                Ok(n) => info!("write {} to the TUN interface", TUN_HEADER_SIZE + n),
+                Err(e) => error!("Error: write failed : {:?}", e),
+            },
+            _ => (),
         }
 
         if let Ok(n) = iface.read(&mut packet) {
