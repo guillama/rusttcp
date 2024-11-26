@@ -1,9 +1,0 @@
-[
-  {
-    "label": "rusttcp",
-    "command": "sudo ./run.sh",
-    "args": [],
-    "problemMatcher": [],
-    "shell": "system"
-  }
-]
