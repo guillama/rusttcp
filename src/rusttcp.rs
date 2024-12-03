@@ -1,6 +1,6 @@
 use crate::errors::RustTcpError;
 use crate::packets::build_reset_packet;
-use crate::tlb::{TcpTlb, WritePacket};
+use crate::tlb::{InternalTcpEvent, TcpTlb, WritePacket};
 use etherparse::{IpNumber, Ipv4Header, TcpHeader};
 use log::{debug, error, info};
 
@@ -59,6 +59,9 @@ impl Connection {
 /// - `NoEvent`: Indicates that no new event has occurred. This is the default state when
 ///   there is nothing to report to the application.
 ///
+/// - `DataToSend(usize)`: Signals that there is data ready to be sent on the TCP connection.
+///   - The inner `usize` represents the number of bytes that can be sent and are available for transmission.
+///
 /// - `DataReceived(usize)`: Signals that new data has been received on the TCP connection.
 ///   - The inner `usize` represents the number of bytes received and available for processing.
 ///
@@ -69,6 +72,7 @@ impl Connection {
 ///   or due to an error. The application can no longer send or receive data.
 pub enum TcpEvent {
     NoEvent,
+    DataToSend(usize),
     DataReceived(usize),
     ConnectionClosing,
     ConnectionClosed,
@@ -449,18 +453,30 @@ impl RustTcp {
         let conn = Connection::new(&iphdr, &tcphdr);
         if let Entry::Occupied(mut e) = self.conns.entry(conn) {
             debug!("Connection already establihed");
-            let tlb = e.get_mut();
-            let (event, n) = tlb.on_packet(&tcphdr, payload, response)?;
 
-            match event {
-                TcpEvent::ConnectionClosed => {
+            let tlb = e.get_mut();
+            let event = tlb.on_packet(&tcphdr, payload, response)?;
+            let n = match event {
+                InternalTcpEvent::ConnectionClosed => {
                     debug!("Remove connection");
                     self.conns.remove(&conn);
-                    self.poll_queue.push_front(event);
+                    self.poll_queue.push_front(TcpEvent::ConnectionClosed);
+                    0
                 }
-                TcpEvent::NoEvent => (),
-                _ => self.poll_queue.push_front(event),
-            }
+                InternalTcpEvent::ConnectionClosingAndAckToSend(n) => {
+                    self.poll_queue.push_front(TcpEvent::ConnectionClosing);
+                    n
+                }
+                InternalTcpEvent::DataToSend(n) => {
+                    self.poll_queue.push_front(TcpEvent::DataToSend(n));
+                    n
+                }
+                InternalTcpEvent::DataReceivedAndAckToSend(r, n) => {
+                    self.poll_queue.push_front(TcpEvent::DataReceived(r));
+                    n
+                }
+                _ => 0,
+            };
 
             return Ok(n);
         }
@@ -471,7 +487,14 @@ impl RustTcp {
             info!("Connection accepted on port {}", tcphdr.destination_port);
 
             let mut tlb = TcpTlb::new(conn, self.default_window_size, self.default_seqnum);
-            let (_, n) = tlb.listen()?.on_packet(&tcphdr, payload, response)?;
+            let event = tlb.listen()?.on_packet(&tcphdr, payload, response)?;
+            let n = match event {
+                InternalTcpEvent::ConnectionClosingAndAckToSend(n)
+                | InternalTcpEvent::DataToSend(n) => n,
+                InternalTcpEvent::DataReceivedAndAckToSend(_, n) => n,
+                _ => 0,
+            };
+
             self.conns.insert(conn, tlb);
             self.conns_by_fd.insert(fd, conn);
 

@@ -7,11 +7,41 @@ use crate::packets::{
     build_ack_packet, build_fin_packet, build_push_ack_packet, build_reset_packet,
     build_syn_ack_packet, build_syn_packet,
 };
-use crate::rusttcp::{Connection, TcpEvent};
+use crate::rusttcp::Connection;
 use etherparse::TcpHeader;
 use log::debug;
 use log::error;
 use log::info;
+
+/// Represents internal events used within the TCP layer for managing state and transitions.
+///
+/// # Variants
+///
+/// - `NoEvent`: Indicates that no new internal event has occurred. This is the default state when
+///   there is no action required or progress to report internally.
+///
+/// - `DataToSend(usize)`: Signals that there is data ready to be sent on the TCP connection.
+///   - The inner `usize` represents the number of bytes that are ready for transmission.
+///
+/// - `DataReceivedAndAckToSend(usize, usize)`: Indicates that data has been received and acknowledged,
+///   and the acknowledgment needs to be sent to the remote endpoint.
+///   - The first `usize` represents the number of bytes received.
+///   - The second `usize` represents the number of bytes that have been acknowledged, which will be sent
+///     back to the remote endpoint to confirm receipt.
+///
+/// - `ConnectionClosingAndAckToSend(usize)`: Notifies that the remote endpoint has initiated a connection close,
+///   and the acknowledgment for the closing segment is ready to be sent.
+///   - The inner `usize` represents the number of bytes involved in the acknowledgment of the connection closing.
+///
+/// - `ConnectionClosed`: Indicates that the TCP connection has been fully closed, either gracefully or due to an error.
+///   - No further communication can occur once this event is triggered.
+pub(crate) enum InternalTcpEvent {
+    NoEvent,
+    DataToSend(usize),
+    DataReceivedAndAckToSend(usize, usize),
+    ConnectionClosingAndAckToSend(usize),
+    ConnectionClosed,
+}
 
 // Represents the result of a write or retransmission operation.
 //
@@ -22,7 +52,7 @@ use log::info;
 // - `LastPacket(usize)`: Indicates the final packet in the sequence, with the number of bytes written.
 // - `Packet(usize)`: Indicates a partial write, with more packets pending; contains the number of bytes written.
 #[derive(Debug)]
-pub enum WritePacket {
+pub(crate) enum WritePacket {
     LastPacket(usize),
     Packet(usize),
 }
@@ -76,7 +106,7 @@ struct TcpSendContext {
 // including its current state, associated connection details, and buffers for sending
 // and receiving data.
 #[derive(Debug, Default, Clone)]
-pub struct TcpTlb {
+pub(crate) struct TcpTlb {
     state: TcpState,
     connection: Connection,
     recv_buf: Vec<u8>,
@@ -86,7 +116,7 @@ pub struct TcpTlb {
 
 impl TcpTlb {
     // Creates a new `TcpTlb` (Transmission Control Block) instance for a TCP connection.
-    pub fn new(connection: Connection, window_size: u16, isa: u32) -> Self {
+    pub(crate) fn new(connection: Connection, window_size: u16, isa: u32) -> Self {
         TcpTlb {
             connection,
             recv: TcpRecvContext {
@@ -112,12 +142,12 @@ impl TcpTlb {
     //
     // Depending on the packet type and connection state, this method may generate a response
     // packet and return a corresponding TCP event.
-    pub fn on_packet(
+    pub(crate) fn on_packet(
         &mut self,
         tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut [u8],
-    ) -> Result<(TcpEvent, usize), RustTcpError> {
+    ) -> Result<InternalTcpEvent, RustTcpError> {
         info!("state = {:?}", &self.state);
 
         match self.state {
@@ -125,11 +155,11 @@ impl TcpTlb {
             TcpState::SynSent => self.on_syn_sent_state(tcphdr, payload, response),
             TcpState::SynReceived => self.on_syn_received_state(tcphdr, payload, response),
             TcpState::Established => self.on_established_state(tcphdr, payload, response),
-            TcpState::CloseWait => Ok((TcpEvent::NoEvent, 0)),
+            TcpState::CloseWait => Ok(InternalTcpEvent::NoEvent),
             TcpState::LastAck => self.on_last_ack_state(tcphdr),
             TcpState::Closed => {
                 let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-                Ok((TcpEvent::NoEvent, n))
+                Ok(InternalTcpEvent::DataToSend(n))
             }
         }
     }
@@ -139,11 +169,11 @@ impl TcpTlb {
         tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut [u8],
-    ) -> Result<(TcpEvent, usize), RustTcpError> {
+    ) -> Result<InternalTcpEvent, RustTcpError> {
         if !tcphdr.syn {
             error!("Not a SYN packet");
             let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-            return Ok((TcpEvent::NoEvent, n));
+            return Ok(InternalTcpEvent::DataToSend(n));
         }
 
         self.recv.isa = tcphdr.sequence_number;
@@ -158,7 +188,7 @@ impl TcpTlb {
             response,
         )?;
 
-        Ok((TcpEvent::NoEvent, n))
+        Ok(InternalTcpEvent::DataToSend(n))
     }
 
     fn on_syn_sent_state(
@@ -166,17 +196,17 @@ impl TcpTlb {
         tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut [u8],
-    ) -> Result<(TcpEvent, usize), RustTcpError> {
+    ) -> Result<InternalTcpEvent, RustTcpError> {
         if !tcphdr.ack || !tcphdr.syn {
             error!("Not a SYN_ACK packet");
             let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-            return Ok((TcpEvent::NoEvent, n));
+            return Ok(InternalTcpEvent::DataToSend(n));
         }
 
         if tcphdr.acknowledgment_number != self.send.next {
             error!("ACK num != SEND next");
             let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-            return Ok((TcpEvent::NoEvent, n));
+            return Ok(InternalTcpEvent::DataToSend(n));
         }
 
         self.recv.isa = tcphdr.sequence_number;
@@ -191,9 +221,10 @@ impl TcpTlb {
             self.recv.window_size,
             response,
         )?;
+
         self.state = TcpState::Established;
 
-        Ok((TcpEvent::NoEvent, n))
+        Ok(InternalTcpEvent::DataToSend(n))
     }
 
     fn on_syn_received_state(
@@ -201,24 +232,24 @@ impl TcpTlb {
         tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut [u8],
-    ) -> Result<(TcpEvent, usize), RustTcpError> {
+    ) -> Result<InternalTcpEvent, RustTcpError> {
         if !tcphdr.ack {
             error!("Not a ACK packet : {:?}", tcphdr);
             let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-            return Ok((TcpEvent::NoEvent, n));
+            return Ok(InternalTcpEvent::DataToSend(n));
         }
 
         let acknum = tcphdr.acknowledgment_number;
         if acknum != self.send.next {
             error!("Unexpected Ack number : {} != {}", acknum, self.send.next);
             let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-            return Ok((TcpEvent::NoEvent, n));
+            return Ok(InternalTcpEvent::DataToSend(n));
         }
 
         self.send.window_size = tcphdr.window_size;
         self.state = TcpState::Established;
 
-        Ok((TcpEvent::NoEvent, 0))
+        Ok(InternalTcpEvent::NoEvent)
     }
 
     fn on_established_state(
@@ -226,12 +257,10 @@ impl TcpTlb {
         tcphdr: &TcpHeader,
         payload: &[u8],
         response: &mut [u8],
-    ) -> Result<(TcpEvent, usize), RustTcpError> {
-        let mut event: TcpEvent = TcpEvent::NoEvent;
-
+    ) -> Result<InternalTcpEvent, RustTcpError> {
         if tcphdr.rst {
             self.state = TcpState::Closed;
-            return Ok((TcpEvent::ConnectionClosed, 0));
+            return Ok(InternalTcpEvent::ConnectionClosed);
         }
 
         let payload_len = payload.len() as u32;
@@ -243,7 +272,7 @@ impl TcpTlb {
             if tcphdr.ack && (acknum != self.send.next) {
                 error!("Unexpected Ack number : {} != {}", acknum, self.send.next);
                 let n = build_reset_packet(self.connection, tcphdr, payload.len(), response)?;
-                return Ok((TcpEvent::NoEvent, n));
+                return Ok(InternalTcpEvent::DataToSend(n));
             }
 
             self.recv.next = self.recv.next.wrapping_add(payload_len);
@@ -252,15 +281,32 @@ impl TcpTlb {
             self.send.acked = tcphdr.acknowledgment_number;
 
             if tcphdr.psh || self.recv.window_size == 0 {
-                event = TcpEvent::DataReceived(payload.len());
+                let n = build_ack_packet(
+                    self.connection,
+                    &[],
+                    self.send.next,
+                    self.recv.next,
+                    self.recv.window_size,
+                    response,
+                )?;
+                return Ok(InternalTcpEvent::DataReceivedAndAckToSend(payload.len(), n));
             }
 
             if tcphdr.fin {
                 // RFC 793, p.79: FIN: "A control bit (finis) occupying one sequence number"
                 self.recv.next += 1;
-
                 self.state = TcpState::CloseWait;
-                event = TcpEvent::ConnectionClosing;
+
+                let n = build_ack_packet(
+                    self.connection,
+                    &[],
+                    self.send.next,
+                    self.recv.next,
+                    self.recv.window_size,
+                    response,
+                )?;
+
+                return Ok(InternalTcpEvent::ConnectionClosingAndAckToSend(n));
             }
         }
 
@@ -273,7 +319,7 @@ impl TcpTlb {
             response,
         )?;
 
-        Ok((event, n))
+        Ok(InternalTcpEvent::DataToSend(n))
     }
 
     fn check_seqnum_range(&self, min: u64, max: u64) -> Result<(), RustTcpError> {
@@ -291,18 +337,18 @@ impl TcpTlb {
         Ok(())
     }
 
-    fn on_last_ack_state(&mut self, tcphdr: &TcpHeader) -> Result<(TcpEvent, usize), RustTcpError> {
+    fn on_last_ack_state(&mut self, tcphdr: &TcpHeader) -> Result<InternalTcpEvent, RustTcpError> {
         if tcphdr.ack && !tcphdr.fin {
             self.state = TcpState::Closed;
-            return Ok((TcpEvent::ConnectionClosed, 0));
+            return Ok(InternalTcpEvent::ConnectionClosed);
         }
 
-        Ok((TcpEvent::NoEvent, 0))
+        Ok(InternalTcpEvent::NoEvent)
     }
 
     // Prepares the TCP connection to listen for incoming connections.
     // This method transitions the TCP state to `TcpState::Listen`.
-    pub fn listen(&mut self) -> Result<&mut Self, RustTcpError> {
+    pub(crate) fn listen(&mut self) -> Result<&mut Self, RustTcpError> {
         match self.state {
             TcpState::Closed => self.state = TcpState::Listen,
             _ => panic!("Unexpected state when opening new connection"),
@@ -329,7 +375,7 @@ impl TcpTlb {
     }
 
     // Reads data from the receive buffer.
-    pub fn on_read(&mut self, buf: &mut [u8]) -> usize {
+    pub(crate) fn on_read(&mut self, buf: &mut [u8]) -> usize {
         let n = self.recv_buf.len();
         buf[..n].clone_from_slice(&self.recv_buf);
 
@@ -342,7 +388,7 @@ impl TcpTlb {
     //
     // This method transitions the connection to the `TcpState::SynSent` state and generates
     // a SYN packet to initiate the three-way handshake.
-    pub fn on_open(&mut self, packet: &mut [u8]) -> Result<usize, RustTcpError> {
+    pub(crate) fn on_open(&mut self, packet: &mut [u8]) -> Result<usize, RustTcpError> {
         let n = match self.state {
             TcpState::Closed => {
                 let n = build_syn_packet(
@@ -366,7 +412,11 @@ impl TcpTlb {
     // and updates the connection's state to reflect the data being sent. It ensures that
     // packets respect the sending window size and supports splitting data into multiple packets
     // if necessary.
-    pub fn on_write(&mut self, buf: &[u8], packet: &mut [u8]) -> Result<WritePacket, RustTcpError> {
+    pub(crate) fn on_write(
+        &mut self,
+        buf: &[u8],
+        packet: &mut [u8],
+    ) -> Result<WritePacket, RustTcpError> {
         if self.state != TcpState::Established {
             return Err(RustTcpError::BadTcpState);
         }
@@ -416,7 +466,7 @@ impl TcpTlb {
     // unacknowledged data from the send buffer as a new TCP packet. The method calculates
     // the appropriate size for the retransmission based on the receiver's window size and
     // prepares a packet accordingly.
-    pub fn on_timeout(&mut self, request: &mut [u8]) -> Result<WritePacket, RustTcpError> {
+    pub(crate) fn on_timeout(&mut self, request: &mut [u8]) -> Result<WritePacket, RustTcpError> {
         let curr_packet_index = (self.send.acked - self.send.isa) as usize - 1;
         let remain_size = self.send.packets_index.last().unwrap() - curr_packet_index;
 
