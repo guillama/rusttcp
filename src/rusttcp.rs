@@ -263,7 +263,7 @@ impl RustTcp {
 
         match mode {
             RustTcpMode::Passive(src_port) => {
-                info!("Server listening on port {src_port:?}...");
+                info!("Server listening on port {:?}...", src_port.0);
                 self.listen_ports.insert(src_port, fd);
             }
             RustTcpMode::Active(server_ip, server_port) => {
