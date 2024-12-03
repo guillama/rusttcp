@@ -1,25 +1,18 @@
 # RustTCP
 
-RustTCP is a minimalistic implementation of the Transmission Control Protocol (TCP) in Rust, built in compliance with RFC 793.
-Originally conceived as an educational project, RustTCP emphasizes simplicity, clarity, and adherence to robust development practices.
+RustTCP is a minimalist implementation of the Transmission Control Protocol (TCP) in Rust, developed in compliance with [RFC 793](https://www.rfc-editor.org/rfc/rfc793).
 
-Designed with extensibility in mind, RustTCP features a modular architecture supported by a comprehensive suite of unit tests.
-This ensures reliability while enabling developers to easily extend and adapt the library to their specific needs.
+## Getting Started
 
-## Features
+To run the server example in this repository, you need a working TUN driver on a Linux or macOS machine.
 
-### Event-Driven Architecture
+Creating the required TUN interface requires root privileges or, on Linux hosts only, the `CAP_NET_ADMIN` capability to be set in advance.
+For more information about Linux capabilities, see the [capabilities man page](https://man7.org/linux/man-pages/man7/capabilities.7.html).
 
-RustTCP utilizes an event-based design to process TCP actions like opening connections, receiving data, and handling timeouts.
+Run the server example using a TUN interface with an IPv4 address of `10.0.0.1`, the host's IPv4 address `10.0.0.2`, and a listening TCP port of `8888` by executing the following command:
 
-### Buffer Management
+```shell
+cargo run --example server -- 10.0.0.1 10.0.0.2 8888
+```
 
-Efficient handling of send and receive buffers ensures smooth data transfer, minimizing unnecessary memory allocations and copies.
-
-### Timeout and Retransmission
-
-Manages retransmissions using an exponential backoff strategy for unacknowledged packets. Timeouts are tracked and handled with precision to ensure reliable delivery.
-
-### Connection Tracking
-
-RustTCP supports multiple concurrent connections, managing them through a mapping of Connection objects and tracking states, sequence numbers, and buffers independently for each connection.
+The command runs the RustTCP server and listen to port 8888 for an incoming TCP connection.
